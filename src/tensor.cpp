@@ -1,0 +1,787 @@
+/*
+ * tensor.cpp
+ *
+ *  Created on: 2017Äê5ÔÂ2ÈÕ
+ *      Author: ZhangHua
+ */
+
+#include <iostream>
+#include <atomic>
+#include <stack>
+#include <queue>
+#include <random>
+#include <condition_variable>
+#include <mutex>
+#include <memory.h>
+
+#include <tensor.hpp>
+
+using namespace std;
+
+namespace clnet {
+size_t CLNET_TENSOR_GLOBALS = CLNET_FEED_FORWARD_FUSION | CLNET_BACK_PROPAGATE_FUSION;
+vector<Tensor*> Tensor::ALL;
+std::default_random_engine type::DropOut::generator;
+
+Tensor::Tensor(vector<int64> dims, vector<Tensor*> ins, string name, vector<Tensor*> outs)
+{
+	inputs = ins;
+	alias = name;
+	peers = outs;
+	size = 0;
+	pointer = nullptr;
+	gradient = nullptr;
+	shape_with(dims);
+	ALL.push_back(this);
+}
+
+Tensor::~Tensor()
+{
+	if (pointer != nullptr)
+		delete pointer;
+}
+
+Tensor* type::Weight::generate_gradient(Tensor* generator)
+{
+	auto back = new back::Gradient;
+	back->shape_with(dimensions);
+	back->alias = "gradient(" + alias + ")";
+	if (generator != nullptr)
+		back->inputs.push_back(generator);
+	return back;
+}
+
+Tensor* type::Bias::generate_gradient(Tensor* generator)
+{
+	auto back = new back::Gradient;
+	back->shape_with(dimensions);
+	back->alias = "gradient(" + alias + ")";
+	if (generator != nullptr)
+		back->inputs.push_back(generator);
+	return back;
+}
+
+Tensor& IterativeOptimizer(vector<Tensor*> ins, vector<Tensor*> outs, size_t epoch)
+{
+	auto tensor = new type::IterativeOptimizer;
+	tensor->shape_with({ static_cast<int64>(sizeof(size_t) * 2 / sizeof(float)) });
+	tensor->alias = "IterativeOptimizer";
+	tensor->max_epoch = epoch;
+	tensor->inputs = ins;
+	tensor->peers = outs;
+	for (size_t i = 1; i < outs.size(); i++)
+		outs[i]->peers.push_back(tensor);
+	return *tensor;
+}
+
+Tensor* type::IterativeOptimizer::body()
+{
+	return peers[0];
+}
+
+vector<Tensor*> type::IterativeOptimizer::auxiliaries()
+{
+	vector<Tensor*> aux;
+	for (size_t i = 2; i < peers.size(); i++)
+		aux.push_back(peers[i]);
+	return aux;
+}
+
+Tensor& StochasticGradientDescentUpdater(vector<Tensor*> parameters, float eta, float decay, std::string name)
+{
+	auto tensor = new type::StochasticGradientDescentUpdater;
+	tensor->alias = name;
+	tensor->learning_rate = eta;
+	tensor->weight_decay = decay;
+	tensor->peers = parameters;
+	for (auto param : parameters)
+		tensor->dependent_on(param->gradient);
+	return *tensor;
+}
+
+void generate_all_gradients(Tensor* graph)
+{
+	set<Tensor*> visited;
+	queue<Tensor*> queue;
+	queue.push(graph);
+	while (!queue.empty()) { //prior-root traversal
+		auto current = queue.front();
+		queue.pop();
+		if (visited.count(current) != 0)
+			continue;
+		visited.insert(current);
+
+		for (auto input : current->inputs) {
+			if (input == nullptr)
+				continue;
+			clnet::Gradient(input, clnet::Gradient(current));
+			queue.push(input);
+		}
+	}
+}
+
+Tensor& StochasticGradientDescentUpdater(Tensor& graph, float eta, float decay, std::string name)
+{
+	auto tensor = new type::StochasticGradientDescentUpdater;
+	tensor->alias = name;
+	tensor->learning_rate = eta;
+	tensor->weight_decay = decay;
+
+	auto gradient = clnet::Gradient(&graph); //gradient output from loss
+	generate_all_gradients(gradient);
+	set<Tensor*> visited;
+	graph.launch(&visited, tensor, [](Tensor* param, void* data) {
+		if (dynamic_cast<type::Weight*>(param) != nullptr || dynamic_cast<type::Bias*>(param) != nullptr)
+			static_cast<Tensor*>(data)->dependent_on(param->gradient);
+	});
+
+	for (auto param : Tensor::ALL) {
+		if (dynamic_cast<type::Weight*>(param) == nullptr && dynamic_cast<type::Bias*>(param) == nullptr)
+			continue;
+		if (param->gradient == nullptr) {
+			cout << "Gradient of " << param->alias << " not found." << endl;
+			continue;
+		}
+		tensor->peers.push_back(param);
+	}
+	return *tensor;
+}
+
+Tensor& XavierNormalDistributionInitializer(Tensor& updater, float mu, float sigma)
+{
+	auto tensor = new type::XavierNormalDistributionInitializer;
+	tensor->alias = "XavierNormalDistributionInitializer";
+	tensor->mu = mu;
+	tensor->sigma = sigma;
+	tensor->peers = updater.peers;
+	return *tensor;
+}
+
+Tensor& XavierNormalDistributionInitializer(vector<Tensor*> parameters, float mu, float sigma)
+{
+	auto tensor = new type::XavierNormalDistributionInitializer;
+	tensor->alias = "XavierNormalDistributionInitializer";
+	tensor->mu = mu;
+	tensor->sigma = sigma;
+	tensor->peers = parameters;
+	return *tensor;
+}
+
+vector<Tensor*> type::XavierNormalDistributionInitializer::auxiliaries()
+{
+	return peers;
+}
+
+void Tensor::dependent_on(Tensor* precusor)
+{
+	inputs.push_back(precusor);
+	if (precusor != nullptr)
+		precusor->peers.push_back(this);
+}
+
+void Tensor::shape_with(vector<int64> sizes)
+{
+	dimensions = sizes;
+	volume = sizes.empty()? 0 : 1;
+	for (int dim : sizes)
+		volume *= dim;
+}
+
+Tensor& Weight(vector<int64> dims, string name, Tensor* input)
+{
+	auto tensor = new type::Weight;
+	tensor->shape_with(dims);
+	tensor->alias = name;
+	if (input != nullptr)
+		tensor->dependent_on(input);
+	return *tensor;
+}
+
+Tensor& Bias(vector<int64> dims, string name, Tensor* input)
+{
+	auto tensor = new type::Bias;
+	tensor->shape_with(dims);
+	tensor->alias = name;
+	if (input != nullptr)
+		tensor->dependent_on(input);
+	return *tensor;
+}
+
+type::Output::Output(vector<int64> dims, vector<Tensor*> ins, string name)
+{
+	shape_with(dims);
+	alias = name;
+	for (auto in : ins)
+		dependent_on(in);
+}
+
+Tensor* back::Gradient::merge_gradient(Tensor* input)
+{
+		if (gradient != input && gradient != nullptr && input != nullptr) {
+			auto merger = dynamic_cast<back::Gradient*>(gradient);
+			if (merger != nullptr)
+				merger->attached = true;
+//			cout << "    G: " << type_name(this) << "/" << alias;
+//			if (input != nullptr)
+//				cout << "    In: " << type_name(input) << "/" << input->alias;
+//			cout << "    GG: " << type_name(gradient) << "/" << gradient->alias;
+//			cout << endl;
+		}
+		return this;
+}
+
+Tensor* Gradient(Tensor* target, Tensor* input)
+{
+	if (target == nullptr)
+		return nullptr;
+	if (target->gradient != nullptr) {
+		auto gradient = dynamic_cast<back::Gradient*>(target->gradient);
+		return gradient != nullptr? gradient->merge_gradient(input) : target->gradient;
+	}
+
+	auto gradient = target->generate_gradient(input);
+	if (gradient == nullptr)
+		return nullptr;
+	gradient->gradient = input;
+	target->gradient = gradient;
+	return gradient;
+}
+
+Tensor& Data(vector<int64> dims, Tensor* input, string name)
+{
+	auto tensor = new type::Data;
+	tensor->shape_with(dims);
+	tensor->alias = name;
+	tensor->dependent_on(input);
+	return *tensor;
+}
+
+Tensor& sigmoid(Tensor& z, std::string name)
+{
+	auto tensor = new type::Activation;
+	tensor->function = "sigmoid";
+	tensor->alias = name + (name.empty()? "" : "=") + tensor->function + "(" + z.alias + ")";
+	tensor->dependent_on(&z);
+	auto result = new type::Output(z.dimensions, {tensor}, name.empty()? tensor->function + "(" + z.alias + ")" : name);
+	return *result;
+}
+
+Tensor& softrelu(Tensor& z, std::string name)
+{
+	auto tensor = new type::Activation;
+	tensor->function = "softrelu";
+	tensor->alias = name + (name.empty()? "" : "=") + tensor->function + "(" + z.alias + ")";
+	tensor->dependent_on(&z);
+	auto result = new type::Output(z.dimensions, {tensor}, name.empty()? tensor->function + "(" + z.alias + ")" : name);
+	return *result;
+}
+
+Tensor& relu(Tensor& z, std::string name)
+{
+	auto tensor = new type::Activation;
+	tensor->function = "relu";
+	tensor->alias = name + (name.empty()? "" : "=") + tensor->function + "(" + z.alias + ")";
+	tensor->dependent_on(&z);
+	auto result = new type::Output(z.dimensions, {tensor}, name.empty()? tensor->function + "(" + z.alias + ")" : name);
+	return *result;
+}
+
+Tensor& tanh(Tensor& z, std::string name)
+{
+	auto tensor = new type::Activation;
+	tensor->function = "tanh";
+	tensor->alias = name + (name.empty()? "" : "=") + tensor->function + "(" + z.alias + ")";
+	tensor->dependent_on(&z);
+	auto result = new type::Output(z.dimensions, {tensor}, name.empty()? tensor->function + "(" + z.alias + ")" : name);
+	return *result;
+}
+
+Tensor& Tensor::operator * (Tensor& other)
+{
+	auto tensor = new type::BinaryOperator;
+	tensor->function = "multiply";
+	tensor->alias = tensor->function;
+	tensor->dependent_on(this);
+	tensor->dependent_on(&other);
+	auto result = new type::Output({dimensions[0], other.dimensions[0]}, {tensor}, alias + "*" + other.alias);
+	return *result;
+}
+
+Tensor& Tensor::operator + (Tensor& other)
+{
+	auto tensor = new type::BinaryOperator;
+	tensor->function = "add";
+	tensor->alias = tensor->function;
+	tensor->dependent_on(this);
+	tensor->dependent_on(&other);
+	auto result = new type::Output(dimensions, {tensor}, alias + "+" + other.alias);
+	return *result;
+}
+
+Tensor& Tensor::operator += (Tensor& other)
+{
+	auto tensor = new type::BinaryOperator;
+	tensor->function = "plus";
+	tensor->alias = alias + "+=" + other.alias;
+	tensor->dependent_on(this);
+	tensor->dependent_on(&other);
+	dependent_on(tensor);
+	return *this;
+}
+
+Tensor& Tensor::transpose()
+{
+//	auto tensor = new type::Output;
+//	tensor->function = "plus";
+//	tensor->alias = alias + "+=" + other.alias;
+//	tensor->dependent_on(this);
+//	tensor->dependent_on(&other);
+//	dependent_on(tensor);
+	return *this;
+}
+
+Tensor* type::Output::generate_gradient(Tensor* generator)
+{
+	auto back = new back::Gradient;
+	back->shape_with(dimensions);
+	back->alias = "gradient(" + alias + ")";
+	if (generator != nullptr)
+		back->inputs.push_back(generator);
+	return back;
+}
+
+Tensor* type::BinaryOperator::generate_gradient(Tensor* generator)
+{
+	auto back = new back::BinaryOperator;
+	back->function = function;
+	back->alias = "back:" + alias;
+	back->inputs.push_back(generator);
+	for (auto tensor : inputs)
+		back->peers.push_back(clnet::Gradient(tensor, back));
+	if (function == "multipy") {
+		back->inputs.push_back(inputs[0]);
+		back->inputs.push_back(inputs[1]);
+	}
+	return back;
+}
+
+Tensor& LinearRegressionLoss(Tensor& y, Tensor& label)
+{
+	auto tensor = new back::Loss;
+	tensor->function = "linear_regression";
+	tensor->alias = tensor->function + "(" + y.alias + "," + label.alias + ")";
+	tensor->dependent_on(&y);
+	tensor->dependent_on(&label);
+	auto out_gradient = clnet::Gradient(&y, tensor);
+	tensor->peers.push_back(out_gradient);
+	return *tensor;
+}
+
+Tensor& SoftmaxLoss(Tensor& y, Tensor& label)
+{
+	auto tensor = new back::Loss;
+	tensor->function = "negative_log_likelihood";
+	string softmax = "softmax(" + y.alias + ")";
+	tensor->alias = tensor->function + "(" + softmax + "," + label.alias + ")";
+	tensor->dependent_on(&y);
+	tensor->dependent_on(&label);
+	auto out_gradient = clnet::Gradient(&y, tensor);
+	tensor->peers.push_back(out_gradient);
+	new type::Output(y.dimensions, {tensor}, softmax);
+	return *tensor;
+}
+
+Tensor& DropOut(Tensor& data, float probability_dropout, std::string name)
+{
+	auto tensor = new type::DropOut;
+	auto mask = new Tensor(data.dimensions, {}, name + "_mask");
+	tensor->probability_keep = 1.0f - probability_dropout;
+	tensor->alias = name;
+	tensor->dependent_on(&data);
+	tensor->dependent_on(mask);
+	data.dependent_on(tensor);
+	return data;
+}
+
+Tensor& FullyConnectedLayer(Tensor& x, Tensor& weight, Tensor* bias, string activation_function, string name)
+{
+	auto tensor = new type::FullyConnectedLayer;
+	tensor->activation = activation_function;
+	string formula = weight.alias + "*" + x.alias;
+	if (bias != nullptr)
+		formula += "+" + bias->alias;
+	if (!activation_function.empty())
+		formula = activation_function + "(" + formula + ")";
+	if (!name.empty())
+		formula = name + "=" + formula;
+	tensor->alias = formula;
+	tensor->dependent_on(&x);
+	tensor->dependent_on(&weight);
+	tensor->dependent_on(bias);
+	auto result = new type::Output({}, {tensor}, name.empty()? tensor->alias : name);
+	if (!x.dimensions.empty())
+		result->shape_with({ x.volume / x.dimensions.back(), weight.dimensions[0] });
+	return *result;
+}
+
+Tensor& FullyConnectedLayer(Tensor& x, int num_hidden, std::string activation_function, std::string name)
+{
+	int dim_in = x.dimensions.back();
+	Tensor& weight = Weight({num_hidden, dim_in}, name + "_weight");
+	Tensor& bias = Bias({dim_in}, name + "_bias");
+	return FullyConnectedLayer(x, weight, &bias, activation_function, name);
+}
+
+Tensor* back::Loss::generate_gradient(Tensor* next)
+{
+	return peers[0];
+}
+
+Tensor* type::FullyConnectedLayer::generate_gradient(Tensor* out_gradient)
+{
+	Tensor* prober = nullptr;
+	if (CLNET_TENSOR_GLOBALS & CLNET_BACK_PROPAGATE_FUSION)
+		prober = peers[0]->peers[0];
+	if (dynamic_cast<back::Loss*>(prober) != nullptr) {
+		Tensor* in = inputs[0];
+		auto loss = static_cast<back::Loss*>(prober);
+		if (dynamic_cast<type::FullyConnectedLayer*>(in->inputs[0]) != nullptr) { //so, we need not generate in_grad for previous FC layer
+			Tensor& label = *loss->inputs[1];
+			Tensor& weight_grad = *clnet::Gradient(inputs[1]);
+			Tensor& bias_grad = *clnet::Gradient(inputs[2]);
+			return new back::kernel_gradient_loss_fully_connected(weight_grad, bias_grad, *in, *peers[0], label, loss->function, activation);
+		}
+	}
+	else if (dynamic_cast<type::FullyConnectedLayer*>(prober) != nullptr) { //cascade FullyConnected
+		Tensor* in = inputs[0];
+		auto nextFC = static_cast<type::FullyConnectedLayer*>(prober);
+		if (dynamic_cast<type::Data*>(in) != nullptr || dynamic_cast<type::FullyConnectedLayer*>(in) != nullptr) { //so, we need not generate in_grad since input is immutable Data
+			Tensor& weight_grad = *clnet::Gradient(inputs[1]);
+			Tensor& bias_grad = *clnet::Gradient(inputs[2]);
+			Tensor& weight_next = *nextFC->inputs[1];
+			Tensor& nabla_next = *clnet::Gradient(nextFC->inputs[2]);
+			return new back::kernel_gradient_cascade_fully_connected(weight_grad, bias_grad, *in, *peers[0], weight_next, nabla_next, activation);
+		}
+	}
+
+	auto back = new back::FullyConnectedLayer;
+	back->activation = activation;
+	back->alias = "back:" + alias;
+	back->inputs.push_back(out_gradient);
+	back->peers.push_back(clnet::Gradient(inputs[1], back)); //weight_grad
+	back->peers.push_back(clnet::Gradient(inputs[2], back)); //bias_grad
+	back->peers.push_back(inputs[1]); //weight
+	back->peers.push_back(inputs[0]); //peers[3]: in
+	back->peers.push_back(peers[0]); //out
+	auto in_gradient = clnet::Gradient(inputs[0], back);
+	back->peers.push_back(in_gradient); //peers[5]: in_gradient
+	return back;
+}
+
+back::kernel_gradient_loss_fully_connected::kernel_gradient_loss_fully_connected(Tensor& weight_grad, Tensor& bias_grad, Tensor& in, Tensor& out, Tensor& label, string loss, string activation, string name)
+{
+	alias = name;
+	this->loss = loss;
+	this->activation = activation;
+	inputs = {&in, &out, &label};
+	weight_grad.dependent_on(this);
+	bias_grad.dependent_on(this);
+}
+
+back::kernel_gradient_cascade_fully_connected::kernel_gradient_cascade_fully_connected(Tensor& weight_grad, Tensor& bias_grad, Tensor& in, Tensor& out, Tensor& weight_next, Tensor& nabla_next, string activation, string name)
+{
+	this->alias = name;
+	this->activation = activation;
+	inputs = {&in, &out, &weight_next, &nabla_next};
+	weight_grad.dependent_on(this);
+	bias_grad.dependent_on(this);
+}
+
+Tensor& LSTMCell(Tensor& cell, Tensor& hidden, Tensor* gates_data, Tensor& weight_h, Tensor& weight_x, Tensor& x, Tensor* bias, Tensor& cell_no, string name)
+{
+	Tensor& FC_hidden = FullyConnectedLayer(hidden, weight_h, nullptr/*&Bias(bias.dimensions, bias.alias + "_h")*/, "", name + "_FC_hidden");
+	Tensor& FC_input = FullyConnectedLayer(x, weight_x, bias, "", name + "_FC_input");
+	FC_hidden += FC_input; //use "+=" instead of "+" to reduce memory footprint
+//	Tensor& z = FC_hidden + FC_input;
+
+	auto tensor = new type::LSTMCell;
+	tensor->alias = name;
+	tensor->dependent_on(&FC_hidden);
+//	tensor->inputs.push_back(&z);
+	tensor->peers = {&cell, &hidden, gates_data, &cell_no, &weight_h, &weight_x, bias, &x};
+	cell.inputs.push_back(tensor);
+	hidden.inputs.push_back(tensor);
+	return *tensor;
+}
+
+Tensor* type::LSTMCell::generate_gradient(Tensor* out_gradient)
+{
+	auto back = new back::LSTMCell;
+	back->alias = "back:" + alias;
+	back->inputs.push_back(out_gradient); //inputs[0]: h_grad
+	auto in_gradient = clnet::Gradient(inputs[0], back); //z_grad: {batch_size, 4*dim_hidden}
+	in_gradient->dependent_on(back); //peers[0]: in_gradient
+	back->peers.push_back(peers[2]); //peers[1]: gates_data
+	back->peers.push_back(peers[3]); //peers[2]: cell_no
+	back->peers.push_back(peers[1]); //peers[3]: previous hidden
+	back->peers.push_back(clnet::Gradient(peers[0], back)); //peers[4]: cell_state_grad
+
+	//fully connected fusion version
+//	back->peers.push_back(clnet::Gradient(peers[4])); //peers[0]: weight_h_grad, don't use tensor as generator to avoid captured by Updater
+//	back->peers.push_back(clnet::Gradient(peers[5])); //peers[1]: weight_x_grad
+//	back->peers.push_back(clnet::Gradient(peers[6])); //peers[2]: bias_grad
+//	back->peers.push_back(peers[3]); //peers[3]: cell_no
+//	back->peers.push_back(peers[2]); //peers[4]: gates_data
+//	back->peers.push_back(peers[7]); //peers[5]: x
+//	back->peers.push_back(peers[4]); //peers[6]: weight_h
+//	back->peers.push_back(clnet::Gradient(peers[7], back)); //peers[7]: x_grad
+//	back->peers.push_back(peers[5]); //peers[8]: weight_x
+	return back;
+}
+
+Tensor& LSTM(Tensor& input, int num_layer, int num_hidden, float dropout, string name)
+{
+	auto tensor = new type::LSTM;
+	tensor->alias = "LSTM(" + input.alias + ")";
+	int batch_size = input.dimensions[0];
+	int sequence_length_max = input.dimensions[1];
+	tensor->dependent_on(&input); //inputs[0]: input
+	bool predictOnly = CLNET_TENSOR_GLOBALS & CLNET_PREDICT_ONLY;
+	Tensor* next = predictOnly? &input : new type::Output({batch_size, input.dimensions[2]}, {}, name + "_input_timestep"); //one step from input
+	tensor->peers.push_back(next); //peers[0]: input_timestep
+	auto cell_no = new Tensor({3}, {}, name + "_runtime_cell_no"); //store data for cell_no, don't use name prefix 'cell' otherwise conflicting with Tensor& cell
+
+	auto initializer = new type::LSTMInitializer(name + "_initializer");
+	tensor->inputs.push_back(initializer); //inputs[1]: initializer
+	auto gates_data = predictOnly? nullptr : new Tensor({sequence_length_max, num_layer, 7 * batch_size * num_hidden}, {}, name + "_gates_data");
+	for (int l = 0; l < num_layer; l++) {
+		const auto& layer = to_string(l);
+		Tensor& weight_h = Weight({4 * num_hidden, num_hidden}, name + "_weight_h" + layer);
+		Tensor& weight_x = Weight({4 * num_hidden, next->dimensions.back()}, name + "_weight_x" + layer);
+		Tensor& bias = Bias({4 * num_hidden}, name + "_bias" + layer);
+		auto cell_state = new type::Output({batch_size, num_hidden}, {}, name + "_cell_state" + layer);
+		auto hidden = new type::Output({batch_size, num_hidden}, {}, name + "_hidden" + layer);
+		initializer->peers.push_back(cell_state);
+		initializer->peers.push_back(hidden);
+		LSTMCell(*cell_state, *hidden, gates_data, weight_h, weight_x, *next, &bias, *cell_no, name + "_cell" + layer);
+		next = &DropOut(*hidden, dropout, name + "_dropout" + layer);
+	}
+
+	if (predictOnly) {
+		next->peers.push_back(initializer); //peers[2]: put here for return. needed for initializing hidden
+		return *next;
+	}
+	tensor->peers.push_back(next); //peers[1]: output
+	tensor->peers.push_back(cell_no); //peers[2]: cell_no
+	return *new type::Output({batch_size, sequence_length_max, num_hidden}, {tensor}, name); //peers[3]: collect all outpus
+}
+
+Tensor* type::LSTM::generate_gradient(Tensor* out_gradient)
+{
+	auto back = new back::LSTM;
+	back->alias = "back:" + alias;
+	back->inputs.push_back(inputs[0]); //inputs[0]: x
+	back->inputs.push_back(out_gradient); //inputs[1]: out_grad
+	generate_all_gradients(peers[1]); //peers[1]: out
+	// prepare weight/bias gradients and/or build back-propagation-through-time dependency
+	auto intput_timestamp_gradient = clnet::Gradient(peers[0]);
+	set<Tensor*> visited;
+	peers[1]->launch(&visited, intput_timestamp_gradient, [](Tensor* param, void* data) {
+		if (dynamic_cast<type::Weight*>(param) != nullptr || dynamic_cast<type::Bias*>(param) != nullptr)
+			static_cast<Tensor*>(data)->dependent_on(param->gradient);
+	});
+	back->peers.push_back(clnet::Gradient(inputs[0], back)); //peers[0]: x_grad
+	back->peers.push_back(intput_timestamp_gradient); //peers[1]: gradient of intput_timestamp
+	back->peers.push_back(clnet::Gradient(peers[1])); //peers[2]: hidden_grad
+	back->peers.push_back(peers[2]); //peers[3]: runtime_cell_no
+	back->peers.push_back(peers[0]); //peers[4]: intput_timestamp
+
+	auto initializer = new type::LSTMInitializer(alias + "_gradient_initializer");
+	for (auto tensor : inputs[1]->peers) {
+		auto gradient = clnet::Gradient(tensor);
+		if (gradient != nullptr)
+			initializer->peers.push_back(gradient);
+	}
+	back->inputs.push_back(initializer);
+	return back;
+}
+
+vector<Tensor*> type::Updater::auxiliaries()
+{
+	return peers;
+}
+
+Tensor* type::LSTM::body()
+{
+	return peers[1];
+}
+
+vector<Tensor*> type::LSTM::auxiliaries()
+{
+	return {peers[2]};
+}
+
+Tensor* back::LSTM::body()
+{
+	return peers[1];
+}
+
+vector<Tensor*> back::LSTM::auxiliaries()
+{
+	return {peers[0], peers[3]};
+}
+
+Tensor& Embedding(Tensor& input, Tensor& vector_weight, string name)
+{
+	auto tensor = new type::Embedding;
+	tensor->alias = "Embedding(" + input.alias + ")";
+	auto result = new type::Output({input.dimensions[0], input.dimensions[1], vector_weight.dimensions[1]}, {tensor}, name);
+	tensor->dependent_on(&input);
+	tensor->dependent_on(&vector_weight);
+	return *result;
+}
+
+Tensor* type::Embedding::generate_gradient(Tensor* out_gradient)
+{
+	auto back = new back::Embedding; //doesn't propagate gradient to input
+	back->alias = "back:" + alias;
+	back->inputs.push_back(inputs[0]); //input
+	back->inputs.push_back(out_gradient);
+	back->peers.push_back(clnet::Gradient(inputs[1], back)); //vector_weight_grad
+	return back;
+}
+
+Tensor* type::DropOut::generate_gradient(Tensor* out_gradient)
+{
+	auto back = new back::DropOut;
+	back->alias = "back:" + alias;
+	out_gradient->inputs.push_back(back);
+	back->inputs.push_back(out_gradient);
+	back->peers.push_back(this);
+	return back;
+}
+
+Tensor& ConvolutionKernel(Tensor& input/*NHWC*/, int filter_count, int kernel_size, int stride_size, string activation_function, bool use_padding, string name)
+{
+	Tensor& weight = Weight({filter_count, kernel_size, kernel_size, input.dimensions[3]}, name + "_weight");
+	Tensor& bias = Bias({filter_count}, name + "_bias");
+
+	return ConvolutionKernel(input, weight, &bias, {stride_size, stride_size}, activation_function, use_padding, name);
+}
+
+Tensor& ConvolutionKernel(Tensor& input/*NHWC*/, Tensor& weight, Tensor* bias, vector<int> stride_sizes, string activation_function, bool use_padding, string name)
+{
+	auto tensor = new type::ConvolutionKernel;
+	tensor->activation = activation_function;
+	string formula;
+	if (!name.empty())
+		formula = name + "=" + formula;
+	formula += "Convolution:" + to_string(weight.dimensions[1]) + "x" + to_string(weight.dimensions[1]) + "(" + input.alias;
+	if (!activation_function.empty())
+		formula += "," + activation_function;
+	formula += ")";
+	tensor->alias = formula;
+	tensor->stride_size[0] = stride_sizes.size() > 0? stride_sizes[0] : 1;
+	tensor->stride_size[1] = stride_sizes.size() > 1? stride_sizes[1] : tensor->stride_size[0];
+	int output_height, output_width;
+	if (use_padding) {
+		output_height = (input.dimensions[1] + tensor->stride_size[0] - 1) / tensor->stride_size[0];
+		output_width = (input.dimensions[2] + tensor->stride_size[1] - 1) / tensor->stride_size[1];
+	}
+	else {
+		output_height = (input.dimensions[1] - weight.dimensions[1] + tensor->stride_size[0]) / tensor->stride_size[0];
+		output_width = (input.dimensions[2] - weight.dimensions[2] + tensor->stride_size[1]) / tensor->stride_size[1];
+	}
+	vector<int64> dims = {input.dimensions[0], output_height, output_width, weight.dimensions[0]};
+
+	auto result = new type::Output(dims, {tensor}, name);
+	tensor->dependent_on(&input);
+	tensor->dependent_on(&weight);
+	tensor->dependent_on(bias);
+	return *result;
+}
+
+Tensor* type::ConvolutionKernel::generate_gradient(Tensor* out_gradient)
+{
+	auto back = new back::ConvolutionKernel;
+	back->alias = "back:" + alias;
+	back->inputs.push_back(out_gradient);
+	back->peers.push_back(this); //peers[0]
+	back->peers.push_back(clnet::Gradient(inputs[0], back)); //peers[1]: in_grad
+	back->peers.push_back(clnet::Gradient(inputs[1], back)); //peers[2]: weight_grad
+	back->peers.push_back(clnet::Gradient(inputs[2], back)); //peers[3]: bias_grad
+	back->peers.push_back(inputs[0]); //peers[4]: input
+	back->peers.push_back(peers[0]); //peers[5]: output
+	auto back_input = new back::ConvolutionKernel::BackForInput;
+	back_input->peers.push_back(this);
+	back->peers.push_back(back_input); //peers[6]
+	back->peers.push_back(inputs[1]); //peers[7]: weight
+	return back;
+}
+
+Tensor& Pooling(Tensor& input, vector<int> pooling_sizes, vector<int> stride_sizes, string pooling_type, bool use_padding, string name)
+{
+	auto tensor = new type::Pooling;
+	tensor->type = pooling_type;
+	string formula;
+	if (!name.empty())
+		formula = name + "=" + formula;
+	formula += "Pooling(" + input.alias + "," + pooling_type + ")";
+	tensor->alias = formula;
+	tensor->pooling_size[0] = pooling_sizes[0];
+	tensor->pooling_size[1] = pooling_sizes.size() > 1? pooling_sizes[1] : pooling_sizes[0];
+	tensor->stride_size[0] = stride_sizes.size() > 0? stride_sizes[0] : pooling_sizes[0];
+	tensor->stride_size[1] = stride_sizes.size() > 1? stride_sizes[1] : tensor->stride_size[0];
+	int output_height, output_width;
+	if (use_padding) {
+		output_height = (input.dimensions[1] + tensor->stride_size[0] - 1) / tensor->stride_size[0];
+		output_width = (input.dimensions[2] + tensor->stride_size[1] - 1) / tensor->stride_size[1];
+	}
+	else {
+		output_height = (input.dimensions[1] - tensor->pooling_size[0] + tensor->stride_size[0]) / tensor->stride_size[0];
+		output_width = (input.dimensions[2] - tensor->pooling_size[1] + tensor->stride_size[1]) / tensor->stride_size[1];
+	}
+	vector<int64> dims = {input.dimensions[0]/*batch*/, output_height, output_width, input.dimensions[3]/*filter*/};
+
+	auto result = new type::Output(dims, {tensor}, name);
+	tensor->dependent_on(&input);
+	if (pooling_type == "max")
+		tensor->peers.push_back(new Tensor(dims, {}, name + "_max_index")); //peers[1]
+	return *result;
+}
+
+Tensor* type::Pooling::generate_gradient(Tensor* out_gradient)
+{
+	auto back = new back::Pooling;
+	back->alias = "back:" + alias;
+	back->inputs.push_back(out_gradient);
+	back->peers.push_back(this); //peers[0]
+	back->peers.push_back(clnet::Gradient(inputs[0], back)); //peers[1]:in_grad
+	if (type == "max")
+		back->peers.push_back(peers[1]); //peers[2]
+	return back;
+}
+
+Tensor& Reshape(Tensor& input, vector<int64> target_shape, string name)
+{
+	auto tensor = new type::Reshape;
+	tensor->shape_with(target_shape);
+	tensor->alias = name;
+	tensor->dependent_on(&input);
+	return *tensor;
+}
+
+Tensor* type::Reshape::generate_gradient(Tensor* out_gradient)
+{
+	auto back = new back::Reshape;
+	back->shape_with(dimensions);
+	back->alias = "gradient(" + alias + ")";
+	back->inputs.push_back(out_gradient);
+	auto in_gradient = clnet::Gradient(inputs[0], back);
+	back->peers.push_back(in_gradient);
+	if (in_gradient == nullptr)
+		return nullptr;
+	return back;
+}
+
+}
