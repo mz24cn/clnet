@@ -1,7 +1,7 @@
 /*
  * tensor.cpp
  *
- *  Created on: 2017Äê5ÔÂ2ÈÕ
+ *  Created on: 2017/5/2
  *      Author: ZhangHua
  */
 

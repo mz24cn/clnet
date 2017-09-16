@@ -1,7 +1,7 @@
 /*
  * image_io.hpp
  *
- *  Created on: 2017Äê8ÔÂ29ÈÕ
+ *  Created on: 2017/8/29
  *      Author: ZhangHua
  */
 

@@ -1,7 +1,7 @@
 /*
  * console.cpp
  *
- *  Created on: 2017Äê6ÔÂ23ÈÕ
+ *  Created on: 2017/6/23
  *      Author: ZhangHua
  */
 
