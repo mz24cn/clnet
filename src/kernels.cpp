@@ -471,6 +471,7 @@ void type::IterativeOptimizer::run(DeviceInstance& I)
 			while (batcher->has_next(I)) {
 				visited.clear();
 				graph->launch(&visited, &I);
+				wait_for_all_kernels_finished(I); //avoid piling up too many events. It's a must for AMD devices.
 			}
 
 		for (auto aux : others)

@@ -111,7 +111,8 @@ T MNIST_CNN(bool is_predict)
 	T data = *new Tensor(dims, {}, "train_images_data");
 	data.dependent_on(iterator);
 
-	const int kernel_size = 5, stride = 1, filters1 = 20, filters2 = 50, filters3 = 500, class_num = 10;
+	//when filters3 > 480, AMD R9 295X2 (Hawaii) device runs unstably, randomly cause program to hung
+	const int kernel_size = 5, stride = 1, filters1 = 20, filters2 = 50, filters3 = 480, class_num = 10;
 	const string activation = "tanh", pooling_type = "max";
 	T conv1 = ConvolutionKernel(data, filters1, kernel_size, stride, activation, true, "conv1");
 	T pool1 = Pooling(conv1, {2}, {}, pooling_type, true, "pool1");

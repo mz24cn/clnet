@@ -352,7 +352,7 @@ template <typename T> function<void(T&)> unitary_operation(string op, T value)
 }
 
 // Currently only allow display 1D, 2D and 3D data
-template <typename T> void operate_tensor_data(Tensor* tensor, vector<int64>& low, vector<int64>& high, vector<int64>& reshaped, DeviceInstance& I, string op = "", T value = (T)0)
+template <typename T> void operate_tensor_data(Tensor* tensor, vector<int64>& low, vector<int64>& high, vector<int64>& reshaped, DeviceInstance& I, string op = "0", T value = (T)0)
 {
 	if (!reshaped.empty()) {
 		cout << "data[";
@@ -384,10 +384,17 @@ template <typename T> void operate_tensor_data(Tensor* tensor, vector<int64>& lo
 	else
 		return;
 
-	auto tmp = I.pointers[tensor];
-	auto data = new T[tensor->volume];
-	I.pointers[tensor] = reinterpret_cast<float*>(data);
-	tensor->upload(I);
+	int which = op[0] - '0'; //0: watch cl::Buffer; 1: watch I.pointers; 2: watch tensor.pointer.
+	op = op.substr(1);
+	T* data;
+	float* tmp = I.pointers[tensor];
+	if (which == 0) {
+		data = new T[tensor->volume];
+		I.pointers[tensor] = reinterpret_cast<float*>(data);
+		tensor->upload(I);
+	}
+	else
+		data = reinterpret_cast<T*>(which == 1? tmp : tensor->pointer);
 
 	int64 range_dimension = 0, ranges[64], subprints[64];
 	if (reshaped.size() >= 64)
@@ -505,10 +512,12 @@ template <typename T> void operate_tensor_data(Tensor* tensor, vector<int64>& lo
 	}
 	else
 		throw runtime_error("too many ranges. try to reduce ':'.");
-	if (!op.empty())
-		tensor->download(I);
-	I.pointers[tensor] = tmp;
-	delete data;
+	if (which == 0) {
+		if (!op.empty())
+			tensor->download(I);
+		I.pointers[tensor] = tmp;
+		delete data;
+	}
 }
 
 void debugger_thread(DeviceInstance& I, Tensor& graph)
@@ -678,6 +687,14 @@ void debugger_thread(DeviceInstance& I, Tensor& graph)
 			else {
 				vector<int64> low, high, reshaped;
 				string subprints;
+				int which;
+				if (command[0] == '^') {
+					which = command[1] == '^'? 2 : 1;
+					command = command.substr(which);
+				}
+				else
+					which  = 0;
+
 				if (command[0] != '[') { //target for inputs or peers
 					auto pos = command.find(".");
 					if (pos != string::npos) {
@@ -760,7 +777,7 @@ void debugger_thread(DeviceInstance& I, Tensor& graph)
 					subprints = command;
 				}
 
-				string type("float"), op;
+				string type("float");
 				size_t n = subprints.rfind(":");
 				if (n != string::npos && subprints.back() != ']') {
 					type = subprints.substr(n + 1);
@@ -775,27 +792,30 @@ void debugger_thread(DeviceInstance& I, Tensor& graph)
 						parse_dimensions<int64>(subprints, &low, &high, &reshaped);
 						c = cin.peek();
 						if (c != '\n')
-							cin >> op;
+							cin >> name;
+						else
+							name.clear();
 					}
-					else
-						op = name;
 				}
+				else
+					name.clear();
 				if (reshaped.empty())
 					parse_dimensions<int64>(subprints, &low, &high, &last->dimensions, &reshaped);
 
-				if (op.empty()) {
+				string op = to_string(which) + name;
+				if (name.empty()) {
 					if (type == "float")
-						operate_tensor_data<float>(last, low, high, reshaped, I);
+						operate_tensor_data<float>(last, low, high, reshaped, I, op);
 					else if (type == "int")
-						operate_tensor_data<int>(last, low, high, reshaped, I);
+						operate_tensor_data<int>(last, low, high, reshaped, I, op);
 					else if (type == "char")
-						operate_tensor_data<char>(last, low, high, reshaped, I);
+						operate_tensor_data<char>(last, low, high, reshaped, I, op);
 					else if (type == "int64")
-						operate_tensor_data<int64>(last, low, high, reshaped, I);
+						operate_tensor_data<int64>(last, low, high, reshaped, I, op);
 					else if (type == "short")
-						operate_tensor_data<short>(last, low, high, reshaped, I);
+						operate_tensor_data<short>(last, low, high, reshaped, I, op);
 					else if (type == "double")
-						operate_tensor_data<double>(last, low, high, reshaped, I);
+						operate_tensor_data<double>(last, low, high, reshaped, I, op);
 				}
 				else {
 					if (type == "float") {
