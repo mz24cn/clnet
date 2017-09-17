@@ -18,3 +18,13 @@ Next I will restore the support for multi-GPUs training and revise the kernels f
 
 I'm working hard for **CLNet** official release!
 -
+
+演示例子运行命令行：  
+全连接MLP：  
+.\OpenCLNet.exe MLP /ds /[0] /nf  
+charRNN：  
+.\OpenCLNet.exe charRNN /nf /ds /[0] corpus\_file:D:\DataSets\charRNN\obama.txt index\_file:D:\DataSets\charRNN\obama.index  
+obama.txt可从[http://data.mxnet.io/mxnet/data/char_lstm.zip](http://data.mxnet.io/mxnet/data/char_lstm.zip)下载。  
+MNIST CNN：  
+.\OpenCLNet.exe MNIST\_CNN /ds /nf /[0]  mnist\_folder:D:/DataSets/MNIST/  
+D:/DataSets/下需包含MNIST数据集文件train-images.idx3-ubyte，train-labels.idx1-ubyte，t10k-images.idx3-ubyte，t10k-labels.idx1-ubyte。可从[http://yann.lecun.com/exdb/mnist/](http://yann.lecun.com/exdb/mnist/)下载
