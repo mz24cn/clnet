@@ -26,6 +26,7 @@ int reverse_int(int i) {
 	return((int)ch1 << 24) + ((int)ch2 << 16) + ((int)ch3 << 8) + ch4;
 }
 
+//revised from https://github.com/fengbingchun/NN_Test/blob/master/demo/DatasetToImage/funset.cpp
 Tensor* read_mnist_images(string file, string name, int alignment_size) {
 	ifstream ifs(file, ios::binary);
 	if (!ifs)

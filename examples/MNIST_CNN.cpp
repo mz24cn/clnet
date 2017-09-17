@@ -3,7 +3,6 @@
  *
  *  Created on: 2017/8/18
  *      Author: ZhangHua
- *      The code is revised from https://github.com/fengbingchun/NN_Test/blob/master/demo/DatasetToImage/funset.cpp
  */
 
 #include <iostream>

@@ -27,6 +27,7 @@ using namespace clnet;
 
 namespace clnet {
 extern unordered_map<string, string> key_values;
+extern Tensor* _breakpoint;
 }
 
 string locate_resources(string path)
@@ -56,23 +57,24 @@ int main(int argc, char** argv)
 	}
 
 	if (argc < 2) {
-		cout << "OpenCLNet [model] [/[0,1,...]] [/d] [/p] [/ld] [/ds] [/os] [/nf] [/cpu] [/: \"{sample}\"] [{key}:{value}]" << endl;
+		cout << "OpenCLNet [model] [/[0,1,...]] [/p] [/ld] [/ds] [/os] [/nf] [/nd] [/ss] [/cpu] [/: \"{sample}\"] [{key}:{value}]" << endl;
 		cout << "model\t\tcurrent support: MLP,MLP_softmax,charRNN,MNIST_CNN" << endl;
 		cout << "{key}:{value}\tprovide named parameters" << endl;
 		cout << "/: \"{sample}\"\ttext parameter (named as 'sample')" << endl;
 		cout << "/ld\t\tlist devices" << endl;
 		cout << "/[0,1,...]\trunning device no." << endl;
-		cout << "/d\t\tdebugger mode" << endl;
 		cout << "/p\t\tpredict mode" << endl;
 		cout << "/ds\t\tdisplay structure" << endl;
 		cout << "/os\t\tdisplay opencl source" << endl;
-		cout << "/nf\t\tnot use fusion optimization" << endl;
-		cout << "/cpu\t\tuse CPU instead of GPU(default)" << endl;
+		cout << "/nf\t\tturn off fusion optimization" << endl;
+		cout << "/nd\t\tturn off debugger thread" << endl;
+		cout << "/ss\t\tstop on startup at root tensor (must turn on debugger)" << endl;
+		cout << "/cpu\t\tuse CPU instead of GPU (GPU is default)" << endl;
 		return 1;
 	}
 
 	Tensor* graph = nullptr;
-	bool use_debugger = false, list_devices = false, display_structure = false;
+	bool use_debugger = true, stop_on_startup = false, list_devices = false, display_structure = false;
 	vector<int> devices;
 	for (int i = 1; i < argc; i++) {
 		string param(argv[i]);
@@ -83,8 +85,10 @@ int main(int argc, char** argv)
 			else
 				key_values["model"] = param;
 		}
-		else if (param == "/d")
-			use_debugger = true;
+		else if (param == "/nd")
+			use_debugger = false;
+		else if (param == "/ss")
+			stop_on_startup = true;
 		else if (param[1] == '[' && param[param.length() - 1] == ']')
 			parse_dimensions<int>(param.substr(1), &devices);
 		else if (param == "/p")
@@ -140,6 +144,8 @@ int main(int argc, char** argv)
 		OpenCL.print_device_info(cout);
 	if (display_structure)
 		OpenCL.print_tensor_structure(*graph);
+	if (stop_on_startup)
+		_breakpoint = graph;
 	OpenCL.run(*graph, devices, use_debugger);
 	return 0;
 }

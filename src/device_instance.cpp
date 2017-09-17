@@ -20,7 +20,7 @@ using namespace std;
 using namespace clnet::type;
 
 namespace clnet {
-extern Tensor* __current;
+extern Tensor* _current;
 
 OpenCL_ OpenCL;
 unordered_map<int, DeviceInstance> DeviceInstance::ALL;
@@ -480,8 +480,8 @@ void OpenCL_::run(Tensor& graph, vector<int> targetDeviceIDs, bool use_debugger)
 			I.free();
 		}
 		catch (cl::Error& e) {
-			if (__current != nullptr)
-				cout << "Current Tensor: " << type_name(__current) << ": " << __current->alias << endl;
+			if (_current != nullptr)
+				cout << "Current Tensor: " << type_name(_current) << ": " << _current->alias << endl;
 			cout << "Error in " << e.what() << " (" << e.err() << "): " << clErrorCodeDescriptions[e.err() < MIN_ERROR_CODE? -USER_ERROR_DESCRIPTION_UNDEFINED : -e.err()] << endl;
 		}
 		catch (runtime_error& e) {

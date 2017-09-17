@@ -24,7 +24,7 @@ using namespace clnet::type;
 int MAX_X = 40, MAX_Y = 10, MAX_Z = 5;
 
 namespace clnet {
-extern Tensor *__current, *__breakpoint;
+extern Tensor *_current, *_breakpoint;
 extern size_t microseconds, breakpoint_hit_times;
 extern unordered_map<Tensor*, size_t> kernels_cost;
 
@@ -287,7 +287,7 @@ template <typename T> void parse_dimensions(string subprints, vector<T>* low, ve
 //{
 //	while (debugger != nullptr) {
 //		breakpoint.wait(breakpoint_lock); //No considering spurious wake-up
-//		cout << "[debugger] break on " << __current->alias << endl;
+//		cout << "[debugger] break on " << _current->alias << endl;
 //	}
 //}
 
@@ -524,7 +524,6 @@ void debugger_thread(DeviceInstance& I, Tensor& graph)
 {
 	Tensor* last = nullptr;
 	string command, name;
-	__breakpoint = &graph;
 	cout << "Debugger thread started." << endl;
 
 	while (true) {
@@ -538,12 +537,12 @@ void debugger_thread(DeviceInstance& I, Tensor& graph)
 				}
 				char c= cin.peek();
 				if (c == '\n') {
-					__breakpoint = nullptr;
+					_breakpoint = nullptr;
 					cout << "[debugger] breakpoint removed." << endl;
 				}
 				else {
 					cin >> name;
-					__breakpoint = locate_tensor(name);
+					_breakpoint = locate_tensor(name);
 					c = cin.peek();
 					if (c == '\n')
 						breakpoint_hit_times = 1;
@@ -560,7 +559,7 @@ void debugger_thread(DeviceInstance& I, Tensor& graph)
 				breakpoint.notify_all();
 			}
 			else if (command == "p" || command == "pause") {
-				__breakpoint = graph.peers[0];
+				_breakpoint = graph.peers[0];
 				breakpoint_hit_times = 1;
 				cout << "[debugger] breakpoint added." << endl;
 			}
@@ -673,7 +672,7 @@ void debugger_thread(DeviceInstance& I, Tensor& graph)
 			else if (command == "quit") {
 				cout << "[debugger] debugger thread terminated." << endl;
 				debugger = nullptr;
-				__breakpoint = nullptr;
+				_breakpoint = nullptr;
 				breakpoint.notify_all();
 			}
 			else if (command == "exit") {
@@ -773,7 +772,7 @@ void debugger_thread(DeviceInstance& I, Tensor& graph)
 				}
 				else {
 					if (last == nullptr)
-						last = __current;
+						last = _current;
 					subprints = command;
 				}
 

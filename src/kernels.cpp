@@ -30,7 +30,7 @@ unordered_map<Tensor*, size_t> kernels_cost;
 
 extern condition_variable breakpoint;
 extern unique_lock<mutex> breakpoint_lock;
-Tensor *__current, *__breakpoint = nullptr;
+Tensor *_current, *_breakpoint = nullptr;
 size_t microseconds = 0, breakpoint_hit_times = 1;
 
 template <typename T> bool read_file_content(const string file, basic_string<T>& content)
@@ -119,16 +119,16 @@ void Tensor::launch(std::set<Tensor*>* executed, void* data, void (*functor)(Ten
 			if (tensor != nullptr)
 				tensor->launch(executed, data, functor);
 
-		__current = this;
+		_current = this;
 		if (CLNET_TENSOR_GLOBALS & CLNET_STEP_INTO_MODE) {
-			__breakpoint = this;
+			_breakpoint = this;
 			breakpoint_hit_times = 1;
 		}
-		if (this == __breakpoint && --breakpoint_hit_times == 0) {
-			cout << "[debugger] break on " << alias << ": " << type_name(this) << endl;
-			breakpoint.notify_all();
+		if (this == _breakpoint && --breakpoint_hit_times == 0) {
+			int device_id = static_cast<DeviceInstance*>(data)->ID;
+			cout << "[debugger] device " << device_id << " break on " << alias << ": " << type_name(this) << endl;
 			breakpoint.wait(breakpoint_lock); //No considering spurious wake-up
-			cout << "[debugger] continue ..." << endl;
+			cout << "[debugger] device " << device_id << " continue to run." << endl;
 		}
 		if (microseconds > 0)
 			microseconds = MICROS();
