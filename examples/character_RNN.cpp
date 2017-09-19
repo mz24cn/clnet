@@ -237,8 +237,7 @@ T charRNN(bool is_predict)
 // demo: solo function, we need not run in OpenCL.run()
 void predictCharRNN(Tensor& predictor, int device_id)
 {
-	auto& I = DeviceInstance::get(device_id);
-	I.bind(OpenCL.find_devices()[I.ID]);
+	auto& I = DeviceInstance::create(OpenCL.find_devices()[device_id], device_id);
 
 	set<Tensor*> visited;
 	predictor.launch(&visited, &I);

@@ -598,8 +598,9 @@ void debugger_thread(DeviceInstance& I, Tensor& graph)
 			}
 			else if (command == "rk" || command == "reload_kernel") {
 				cout << "[debugger] waiting ..." << endl;
-				const cl::Device& device = I.queue.getInfo<CL_QUEUE_DEVICE>();
-				reload_kernels(device, I.context, I);
+				const auto& device = I.queue.getInfo<CL_QUEUE_DEVICE>();
+				const auto& context = I.queue.getInfo<CL_QUEUE_CONTEXT>();
+				reload_kernels(device, context, I);
 				cout << "[debugger] kernels reloaded." << endl;
 			}
 			else if (command == "save") {

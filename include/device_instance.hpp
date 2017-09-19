@@ -34,25 +34,25 @@ struct Tensor;
 
 struct DeviceInstance {
 	int ID;
-	int work_group_size;
+	cl::Device device;
 
 	std::atomic<int> parameters_state;
 	std::atomic<int> gradients_state;
 	size_t parameters_timestamp;
 	std::vector<cl::Event> precondition_events;
 
-	cl::Context context;
+	int work_group_size;
 	cl::CommandQueue queue;
 	std::unordered_map<Tensor*, cl::Buffer> buffers;
 	std::unordered_map<Tensor*, cl::Event> events;
 	std::unordered_map<Tensor*, float*> pointers;
 	std::unordered_map<Tensor*, cl::Kernel> kernels;
 
-	explicit DeviceInstance() : ID(-1), work_group_size(0), parameters_state(0), gradients_state(0), parameters_timestamp(0) {}
-	void bind(cl::Device& device);
+	explicit DeviceInstance() : ID(-1), parameters_state(0), gradients_state(0), parameters_timestamp(0), work_group_size(0) {}
+	void initialize();
 	void free();
 
-	static DeviceInstance& get(int id);
+	static DeviceInstance& create(cl::Device& cl_device, int id);
 	static std::unordered_map<int, DeviceInstance> ALL;
 };
 

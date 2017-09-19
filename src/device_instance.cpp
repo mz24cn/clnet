@@ -62,7 +62,7 @@ void reload_kernels(const cl::Device& device, const cl::Context& context, Device
 	}
 }
 
-void DeviceInstance::bind(cl::Device& device)
+void DeviceInstance::initialize()
 {
 	int size = device.getInfo<CL_DEVICE_MAX_WORK_GROUP_SIZE>();
 	if ((size & (size - 1)) == 0)
@@ -74,7 +74,7 @@ void DeviceInstance::bind(cl::Device& device)
 		work_group_size = power2 / 2;
 	}
 
-	context = cl::Context(device);
+	cl::Context context(device);
 	reload_kernels(device, context, *this);
 
 #if CL_HPP_TARGET_OPENCL_VERSION < 200
@@ -87,10 +87,12 @@ void DeviceInstance::bind(cl::Device& device)
 		tensor->initialize(this);
 }
 
-DeviceInstance& DeviceInstance::get(int id)
+DeviceInstance& DeviceInstance::create(cl::Device& cl_device, int id)
 {
 	DeviceInstance& I = DeviceInstance::ALL[id];
 	I.ID = id;
+	I.device = cl_device;
+	I.initialize();
 	return I;
 }
 
@@ -110,9 +112,10 @@ void Tensor::initialize(DeviceInstance* I) //this should be idempotent
 		allocate_mutex.unlock();
 
 		if (I != nullptr && I->pointers.count(this) == 0) { //idempotent
-			I->buffers[this] = cl::Buffer(I->context, CL_MEM_READ_WRITE|CL_MEM_USE_HOST_PTR, size, pointer); //initialize from tensor itself
+			const auto& context = I->queue.getInfo<CL_QUEUE_CONTEXT>();
+			I->buffers[this] = cl::Buffer(context, CL_MEM_READ_WRITE|CL_MEM_USE_HOST_PTR, size, pointer); //initialize from tensor itself
 			I->pointers[this] = new float[volume];
-			memset(I->pointers[this], 0, size); //Every byte of initialized Tensor is starting from zero
+			memcpy(I->pointers[this], pointer, size); //initialized by tensor's pointer
 		}
 	}
 }
@@ -256,13 +259,14 @@ void Updater::global_updater_thread(DeviceInstance& I)
 {
 //	vector<cl::Buffer> parameters_buffer, gradients_buffer;
 	Tensor& global_data = *new Tensor({}, {}, alias + "_global_data");
+	const auto& context = I.queue.getInfo<CL_QUEUE_CONTEXT>();
 	for (auto tensor : peers) {
 		auto parameter = new Tensor({}, {}, alias + ":" + tensor->alias);
 		global_data.peers.push_back(parameter);
-		I.buffers[parameter] = cl::Buffer(I.context, CL_MEM_READ_WRITE|CL_MEM_USE_HOST_PTR, tensor->size, I.pointers[tensor->gradient]);
+		I.buffers[parameter] = cl::Buffer(context, CL_MEM_READ_WRITE|CL_MEM_USE_HOST_PTR, tensor->size, I.pointers[tensor->gradient]);
 		auto gradient = new Tensor({}, {}, "gradient(" + alias + ":" + tensor->alias + ")");
 		global_data.inputs.push_back(gradient);
-		I.buffers[gradient] = cl::Buffer(I.context, CL_MEM_READ_WRITE|CL_MEM_ALLOC_HOST_PTR, tensor->size);
+		I.buffers[gradient] = cl::Buffer(context, CL_MEM_READ_WRITE|CL_MEM_ALLOC_HOST_PTR, tensor->size);
 //		parameters_buffer.push_back(cl::Buffer(context, CL_MEM_READ_WRITE|CL_MEM_USE_HOST_PTR, tensor->size, tensor->pointer));
 //		gradients_buffer.push_back(cl::Buffer(context, CL_MEM_READ_WRITE|CL_MEM_ALLOC_HOST_PTR, tensor->size));
 	}
@@ -387,7 +391,7 @@ void OpenCL_::print_device_info(ostream& out)
 		auto sizesItem = device.getInfo<CL_DEVICE_MAX_WORK_ITEM_SIZES>();
 
 		out << "\tDevice Name:         " << name << endl;
-		out << "\tCLNet device ID:     " << n << endl;
+		out << "\tclNET device ID:     " << n << endl;
 		out << "\tType:                ";
 		switch (deviceType) {
 		case CL_DEVICE_TYPE_CPU: out << "CPU"; break;
@@ -447,16 +451,16 @@ void OpenCL_::run(Tensor& graph, vector<int> targetDeviceIDs, bool use_debugger)
 #pragma omp parallel for
 	for (no = 0; no < deviceNum; no++) {
 		try {
-			auto& I = DeviceInstance::get(targetDeviceIDs[no]);
-			auto& device = targetDevices[I.ID];
+			int device_id = targetDeviceIDs[no];
+			auto& device = targetDevices[device_id];
 			const auto& name = device.getInfo<CL_DEVICE_NAME>();
-			if (use_debugger && no == 0)
-				launch_debugger_thread(I, graph);
 
 			size_t time = MILLIS(0);
-			I.bind(device);
+			auto& I = DeviceInstance::create(device, device_id);
 			time = MILLIS(time);
 			cout << "[" << I.ID << "] " << name << " (kernels build: " << millis_string(time) << ")" << endl;
+			if (use_debugger && no == 0)
+				launch_debugger_thread(I, graph);
 
 			if (updater != nullptr) {
 				I.gradients_state = updater->inputs.size();

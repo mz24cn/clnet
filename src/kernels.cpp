@@ -28,6 +28,7 @@ const vector<cl::Event> no_preconditions;
 unordered_map<string, string> kernels_source;
 unordered_map<Tensor*, size_t> kernels_cost;
 
+extern string cl_build_options;
 extern condition_variable breakpoint;
 extern unique_lock<mutex> breakpoint_lock;
 Tensor *_current, *_breakpoint = nullptr;
@@ -976,6 +977,10 @@ float back::Loss::L(DeviceInstance& I) //for training progress evaluation scenar
 
 std::string type::ConvolutionKernel::generate_source_code(DeviceInstance& I)
 {
+	cl::Platform platform(I.device.getInfo<CL_DEVICE_PLATFORM>());
+	if (platform.getInfo<CL_PLATFORM_NAME>().find("NVIDIA") == string::npos)
+		cl_build_options += " -DCONVOLUTION_VECTOR"; //screen float16 issue for NVIDIA driver
+
 	string code = kernels_source["feed_forward_convolution_activation_relu"];
 	if (activation != "relu")
 		replace_all(code, "relu", activation);

@@ -46,7 +46,7 @@ struct Tensor {
 	virtual ~Tensor();
 
 	virtual void launch(std::set<Tensor*>* executed, void* data, void (*functor)(Tensor*, void*) = [](Tensor* tensor, void* data) { tensor->run(*static_cast<DeviceInstance*>(data)); });
-	virtual void initialize(DeviceInstance* I);
+	virtual void initialize(DeviceInstance* I = nullptr);
 
 	Tensor& operator * (Tensor& other);
 	Tensor& operator + (Tensor& other);
