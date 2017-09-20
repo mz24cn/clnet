@@ -7,6 +7,7 @@
 
 #include <iostream>
 #include <algorithm>
+#include <fstream>
 
 #include <tensor.hpp>
 #include <device_instance.hpp>
@@ -103,7 +104,7 @@ kernel void load_mnist_images(global float* data, global float* label, const glo
 
 T MNIST_CNN(bool is_predict)
 {
-	const string mnist_folder = optional<string>("mnist_folder", "E:\\DataSets\\MNIST\\");
+	const string mnist_folder = optional<string>("mnist_folder", "D:\\DataSets\\");
 	const int batch_size = optional<int>("batch_size", 32);
 	auto iterator = new MNISTImageIterator(mnist_folder, batch_size);
 	vector<int64> dims{batch_size, iterator->peers[0]->dimensions[1], iterator->peers[0]->dimensions[2], 1};
@@ -136,8 +137,14 @@ T MNIST_CNN(bool is_predict)
 	T SGD = StochasticGradientDescentUpdater(loss, learning_rate, weight_decay);
 	T initializer = XavierNormalDistributionInitializer(SGD, 0, 2.34f);
 
+	vector<Tensor*> parameters;
+	for (auto tensor : Tensor::ALL)
+		if (dynamic_cast<type::Bias*>(tensor) != nullptr || dynamic_cast<type::Weight*>(tensor) != nullptr)
+			parameters.push_back(tensor);
+	auto clnetparams_file = optional<string>("params_file", "D:\\DataSets\\MNIST_CNN.clnetparams");
+
 	const int N_samples = iterator->peers[0]->dimensions[0];
-	auto monitor = new InstantTensor("MNIST_CNN_monitor", {}, {}, [batch_size, N_samples, &loss](InstantTensor* self, DeviceInstance& I) {
+	auto monitor = new InstantTensor("MNIST_CNN_monitor", {}, {}, [batch_size, N_samples, &loss, parameters, clnetparams_file](InstantTensor* self, DeviceInstance& I) {
 		auto optimizer = static_cast<type::IterativeOptimizer*>(self->peers[0]);
 		auto epoch = optimizer->current_epoch(I);
 
@@ -145,7 +152,12 @@ T MNIST_CNN(bool is_predict)
 		accuracy = exp(-accuracy / batch_size);
 		size_t duration = optimizer->milliseconds_since_last(I);
 		string speed = epoch == 0? to_string(duration) + "ms" : to_string(1000.0f * N_samples / duration) + "/s";
-		cout << "[" << I.ID << "," << epoch << "," << speed << "] accuracy: " << accuracy  << endl;
+		logger << "[" << I.ID << "," << epoch << "," << speed << "] accuracy: " << accuracy  << endl;
+
+		ofstream ofs(clnetparams_file, ostream::binary);
+		for (size_t i = 0; i < parameters.size(); i++)
+			save_tensor(parameters[i], ofs, I);
+		ofs.close();
 	});
 	auto validator = new InstantTensor("MNIST_CNN_validator", {}, [iterator, class_num, &inference, &label](InstantTensor* self, DeviceInstance& I) {
 		auto optimizer = static_cast<type::IterativeOptimizer*>(self->peers[0]);
@@ -171,7 +183,7 @@ T MNIST_CNN(bool is_predict)
 					correct++;
 		}
 		float accuracy = (int) (10000.0f * correct / iterator->peers[2]->dimensions[0]) / 100.0f;
-		cout << "[" << I.ID << "," << epoch << "] test set accuracy: " << accuracy  << "%" << endl;
+		logger << "[" << I.ID << "," << epoch << "] test set accuracy: " << accuracy  << "%" << endl;
 		offset = -1; //random_shuffle on test set is not needed.
 	}, {}, [&inference](InstantTensor* self) -> Tensor*{ return &inference; });
 	return IterativeOptimizer({&initializer}, {&SGD, iterator, monitor, validator}, max_iters);

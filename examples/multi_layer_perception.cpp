@@ -29,7 +29,7 @@ struct MLPMonitor : Tensor {
 		size_t duration = optimizer->milliseconds_since_last(I);
 		int n = peers[0]->peers[0]->dimensions[0] * 2000;
 		string speed = epoch == 0? to_string(duration) + "ms" : to_string(int(1000.0f * n / duration)) + "/s";
-		cout << "[" << I.ID << "," << epoch << "," << speed << "] error rate: " << static_cast<back::Loss*>(peers[0])->L(I)  << endl;
+		logger << "[" << I.ID << "," << epoch << "," << speed << "] error rate: " << static_cast<back::Loss*>(peers[0])->L(I)  << endl;
 	}
 };
 
@@ -120,7 +120,7 @@ T MLP_softmax()
 	auto monitor = new InstantTensor("monitor", {}, {}, [K, N, softmax_output, &sym_label](InstantTensor* self, DeviceInstance& I) {
 		auto iter = static_cast<type::IterativeOptimizer*>(self->peers[0])->current_epoch(I);
 		if (iter % 1000 == 0) {
-			cout << "epoch " << iter << endl;
+			logger << "epoch " << iter << endl;
 
 			softmax_output->upload(I);
 			auto pred = I.pointers[softmax_output];
@@ -137,7 +137,7 @@ T MLP_softmax()
 				}
 				if (p_y == target[i]) right++;
 			}
-			cout << "Accuracy: " << 1.0f * right / N << endl;
+			logger << "Accuracy: " << 1.0f * right / N << endl;
 		}
 	});
 	return IterativeOptimizer({initializer, generator}, {&SGD, generator, monitor}, max_iters);

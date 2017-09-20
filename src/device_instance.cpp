@@ -12,6 +12,7 @@
 #include <thread>
 #include <omp.h>
 #include <algorithm>
+#include <fstream>
 
 #include <tensor.hpp>
 #include <device_instance.hpp>
@@ -22,6 +23,7 @@ using namespace clnet::type;
 namespace clnet {
 extern Tensor* _current;
 
+Logger logger;
 OpenCL_ OpenCL;
 unordered_map<int, DeviceInstance> DeviceInstance::ALL;
 unordered_map<string, string> key_values;
@@ -47,11 +49,11 @@ void reload_kernels(const cl::Device& device, const cl::Context& context, Device
 	cl::Program program(context, source);
 	try {
 		if (CLNET_TENSOR_GLOBALS & CLNET_OPENCL_SHOW_SOURCE)
-			cout << "****** source code ******\n" << source << endl;
+			logger << "****** source code ******\n" << source << endl;
 		program.build(cl_build_options.c_str());
 	}
 	catch (cl::Error& e) {
-		cout << program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(device) << endl;
+		logger << program.getBuildInfo<CL_PROGRAM_BUILD_LOG>(device) << endl;
 		throw e;
 	}
 
@@ -89,7 +91,9 @@ void DeviceInstance::initialize()
 
 DeviceInstance& DeviceInstance::create(cl::Device& cl_device, int id)
 {
+	allocate_mutex.lock();
 	DeviceInstance& I = DeviceInstance::ALL[id];
+	allocate_mutex.unlock();
 	I.ID = id;
 	I.device = cl_device;
 	I.initialize();
@@ -130,7 +134,7 @@ void type::MiniBatch::set_total_samples(int N)
 	shape_with({ N + 1 });
 	total_batches = N / batch_size;
 	if (N % batch_size != 0 && (CLNET_TENSOR_GLOBALS & CLNET_VALUE_MISMATCH_WARN))
-		cout << (N % batch_size) << " samples at tail were abandoned." << endl;
+		logger << (N % batch_size) << " samples at tail were abandoned." << endl;
 }
 
 void type::MiniBatch::initialize(DeviceInstance* I)
@@ -441,7 +445,7 @@ void OpenCL_::run(Tensor& graph, vector<int> targetDeviceIDs, bool use_debugger)
 {
 	vector<cl::Device>& targetDevices = find_devices();
 	if (targetDevices.empty()) {
-		cout << "No OpenCL device found." << endl;
+		logger << "No OpenCL device found." << endl;
 		return;
 	}
 
@@ -458,7 +462,7 @@ void OpenCL_::run(Tensor& graph, vector<int> targetDeviceIDs, bool use_debugger)
 			size_t time = MILLIS(0);
 			auto& I = DeviceInstance::create(device, device_id);
 			time = MILLIS(time);
-			cout << "[" << I.ID << "] " << name << " (kernels build: " << millis_string(time) << ")" << endl;
+			logger << "[" << I.ID << "] " << name << " (kernels build: " << millis_string(time) << ")" << endl;
 			if (use_debugger && no == 0)
 				launch_debugger_thread(I, graph);
 
@@ -474,7 +478,7 @@ void OpenCL_::run(Tensor& graph, vector<int> targetDeviceIDs, bool use_debugger)
 			graph.launch(&visited, &I);
 
 			time = MILLIS(time);
-			cout << "[" << I.ID << "] run time: " << millis_string(time) << "." << endl;
+			logger << "[" << I.ID << "] run time: " << millis_string(time) << "." << endl;
 			if (updater != nullptr) {
 				barrier.wait();
 				if (no == 0)
@@ -485,11 +489,11 @@ void OpenCL_::run(Tensor& graph, vector<int> targetDeviceIDs, bool use_debugger)
 		}
 		catch (cl::Error& e) {
 			if (_current != nullptr)
-				cout << "Current Tensor: " << type_name(_current) << ": " << _current->alias << endl;
-			cout << "Error in " << e.what() << " (" << e.err() << "): " << clErrorCodeDescriptions[e.err() < MIN_ERROR_CODE? -USER_ERROR_DESCRIPTION_UNDEFINED : -e.err()] << endl;
+				logger << "Current Tensor: " << type_name(_current) << ": " << _current->alias << endl;
+			logger << "Error in " << e.what() << " (" << e.err() << "): " << clErrorCodeDescriptions[e.err() < MIN_ERROR_CODE? -USER_ERROR_DESCRIPTION_UNDEFINED : -e.err()] << endl;
 		}
 		catch (runtime_error& e) {
-			cout << "Runtime error: " << e.what() << endl;
+			logger << "Runtime error: " << e.what() << endl;
 		}
 	}
 }
@@ -497,14 +501,14 @@ void OpenCL_::run(Tensor& graph, vector<int> targetDeviceIDs, bool use_debugger)
 void display_tensor_name(Tensor* current, void* padding)
 {
 	string& pad = *static_cast<string*>(padding);
-	cout << pad << type_name(current) << "\t\t" << current->alias;
+	logger << pad << type_name(current) << "\t\t" << current->alias;
 	if (!current->dimensions.empty()) {
-		cout << "[" << current->dimensions[0];
+		logger << "[" << current->dimensions[0];
 		for (size_t i = 1; i < current->dimensions.size(); i++)
-			cout << "," << current->dimensions[i];
-		cout << "]";
+			logger << "," << current->dimensions[i];
+		logger << "]";
 	}
-	cout << endl;
+	logger << endl;
 
 	auto structure = dynamic_cast<type::Structured*>(current);
 	if (structure == nullptr)
@@ -516,7 +520,7 @@ void display_tensor_name(Tensor* current, void* padding)
 		body->launch(&visited, static_cast<void*>(&indent), display_tensor_name);
 	auto others = structure->auxiliaries();
 	if (!others.empty())
-		cout << "-";
+		logger << "-";
 	for (auto aux : others)
 		display_tensor_name(aux, static_cast<void*>(&indent));
 }
@@ -642,5 +646,32 @@ template string optional(string name, string default_value);
 template int optional(string name, int default_value);
 template size_t optional(string name, size_t default_value);
 template double optional(string name, double default_value);
+
+Logger::Logger() : count(0) {}
+
+Logger& Logger::operator +=(std::string filename)
+{
+	streams[count++] = new ofstream(filename, std::ofstream::binary | std::ofstream::out | std::ofstream::app);
+	return *this;
+}
+
+Logger& Logger::operator +=(ostream& os)
+{
+	streams[count++] = &os;
+		return *this;
+}
+
+Logger& Logger::operator <<(ostream& (*fp)(ostream&))
+{
+	for (int i = 0; i < count; i++)
+		*streams[i] << fp;
+	return *this;
+}
+
+void Logger::flush()
+{
+	for (int i = 0; i < count; i++)
+		streams[i]->flush();
+}
 
 }

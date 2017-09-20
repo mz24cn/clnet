@@ -78,6 +78,27 @@ public:
 	}
 };
 
+#define MAX_LOGGER_STREAMS 8
+class Logger {
+	std::ostream* streams[MAX_LOGGER_STREAMS];
+	int count;
+
+public:
+	Logger();
+	Logger& operator +=(std::string filename);
+	Logger& operator +=(std::ostream& os);
+
+	template <typename T> Logger& operator <<(const T& content)
+	{
+		for (int i = 0; i < count; i++)
+			*streams[i] << content;
+		return *this;
+	}
+	Logger& operator <<(std::ostream& (*fp)(std::ostream&));
+	void flush();
+};
+extern Logger logger;
+
 class OpenCL_ {
 	std::vector<cl::Device>* devices = nullptr;
 
@@ -91,7 +112,6 @@ public:
 	void print_device_info(std::ostream& out);
 	void print_tensor_structure(Tensor& graph);
 };
-
 extern OpenCL_ OpenCL;
 
 void reload_kernels(const cl::Device& device, const cl::Context& context, DeviceInstance& I);

@@ -283,56 +283,48 @@ template <typename T> void parse_dimensions(string subprints, vector<T>* low, ve
 	}
 }
 
-//void breakpoint_thread()
-//{
-//	while (debugger != nullptr) {
-//		breakpoint.wait(breakpoint_lock); //No considering spurious wake-up
-//		cout << "[debugger] break on " << _current->alias << endl;
-//	}
-//}
-
 void describe_tensor(Tensor* tensor, bool only_name = true)
 {
 	if (tensor == nullptr) {
-		cout << "NULL" << endl;
+		logger << "NULL" << endl;
 		return;
 	}
 	if (only_name) {
-		cout << tensor->alias << "[";
+		logger << tensor->alias << "[";
 		if (!tensor->dimensions.empty())
-			cout << tensor->dimensions[0];
+			logger << tensor->dimensions[0];
 		for (size_t i = 1; i < tensor->dimensions.size(); i++)
-			cout << "," << tensor->dimensions[i];
-		cout << "]: " << type_name(tensor) << endl;
+			logger << "," << tensor->dimensions[i];
+		logger << "]: " << type_name(tensor) << endl;
 		return;
 	}
 
-	cout << "\tthis:\t\t\t\t" << tensor << endl;
-	cout << "\ttype:\t\t\t" << type_name(tensor) << endl;
-	cout << "\talias:\t\t\t" << tensor->alias << endl;
-	cout << "\tvolume:\t\t\t" << tensor->volume << endl;
+	logger << "\tthis:\t\t\t\t" << tensor << endl;
+	logger << "\ttype:\t\t\t" << type_name(tensor) << endl;
+	logger << "\talias:\t\t\t" << tensor->alias << endl;
+	logger << "\tvolume:\t\t\t" << tensor->volume << endl;
 
-	cout << "\tdimensions:\t\t[";
+	logger << "\tdimensions:\t\t[";
 	if (!tensor->dimensions.empty())
-		cout << tensor->dimensions[0];
+		logger << tensor->dimensions[0];
 	for (size_t i = 1; i < tensor->dimensions.size(); i++)
-		cout << "," << tensor->dimensions[i];
-	cout << "]" << endl;
+		logger << "," << tensor->dimensions[i];
+	logger << "]" << endl;
 
-	cout << "\tsize:\t\t\t\t" << tensor->size << " bytes" << endl;
-	cout << "\tpointer:\t\t\t" << tensor->pointer << endl;
-	cout << "\tgradient:\t\t";
+	logger << "\tsize:\t\t\t\t" << tensor->size << " bytes" << endl;
+	logger << "\tpointer:\t\t\t" << tensor->pointer << endl;
+	logger << "\tgradient:\t\t";
 	describe_tensor(tensor->gradient);
 
-	cout << "\tinputs:" << endl;
+	logger << "\tinputs:" << endl;
 	for (auto input : tensor->inputs) {
-		cout << "\t\t";
+		logger << "\t\t";
 		describe_tensor(input);
 	}
 
-	cout << "\tpeers:" << endl;
+	logger << "\tpeers:" << endl;
 	for (auto peer : tensor->peers) {
-		cout << "\t\t";
+		logger << "\t\t";
 		describe_tensor(peer);
 	}
 }
@@ -340,7 +332,7 @@ void describe_tensor(Tensor* tensor, bool only_name = true)
 template <typename T> function<void(T&)> unitary_operation(string op, T value)
 {
 	if (op.empty())
-		return [](T& a) { cout << a; };
+		return [](T& a) { logger << a; };
 	else if (op == "+=")
 		return [value](T& a) { a += value; };
 	else if (op == "=")
@@ -355,17 +347,17 @@ template <typename T> function<void(T&)> unitary_operation(string op, T value)
 template <typename T> void operate_tensor_data(Tensor* tensor, vector<int64>& low, vector<int64>& high, vector<int64>& reshaped, DeviceInstance& I, string op = "0", T value = (T)0)
 {
 	if (!reshaped.empty()) {
-		cout << "data[";
+		logger << "data[";
 		for (size_t i = 0; i < reshaped.size(); i++) {
 			if (i > 0)
-				cout << ",";
+				logger << ",";
 			if (high[i] - low[i] > 1)
-				cout << low[i] << ":" << high[i];
+				logger << low[i] << ":" << high[i];
 			else
-				cout << low[i];
-			cout << "/" << reshaped[i];
+				logger << low[i];
+			logger << "/" << reshaped[i];
 		}
-		cout << "] for ";
+		logger << "] for ";
 	}
 	describe_tensor(tensor);
 	int NZ = tensor->dimensions.size() < 3? 1 : tensor->dimensions[tensor->dimensions.size() - 3];
@@ -422,15 +414,15 @@ template <typename T> void operate_tensor_data(Tensor* tensor, vector<int64>& lo
 		number = [](int type, int64 i) {
 			switch (type) {
 			case 0:
-				cout << i << ":" << endl; break;
+				logger << i << ":" << endl; break;
 			case 1:
-				cout << i << ":\t"; break;
+				logger << i << ":\t"; break;
 			case 2:
-				cout << ","; break;
+				logger << ","; break;
 			case 3:
-				cout << endl; break;
+				logger << endl; break;
 			case -1:
-				cout << "\t"; break;
+				logger << "\t"; break;
 			}
 		};
 	else
@@ -457,17 +449,17 @@ template <typename T> void operate_tensor_data(Tensor* tensor, vector<int64>& lo
 			throw runtime_error("Update requires range. try to add \"[:]\".");
 
 		for (int k = 0; k < max_z; k++) {
-			cout << k << endl;
+			logger << k << endl;
 			for (int i = 0; i < max_y; i++) {
-				cout << i << ":\t" << data[k * NR * NC + i * NC];
+				logger << i << ":\t" << data[k * NR * NC + i * NC];
 				for (int j = 1; j < max_x; j++)
-					cout << "," << data[k * NR * NC + i * NC + j];
+					logger << "," << data[k * NR * NC + i * NC + j];
 				if (extra_x)
-					cout << " ...";
-				cout << endl;
+					logger << " ...";
+				logger << endl;
 			}
 			if (extra_y)
-				cout << " ..." << endl;
+				logger << " ..." << endl;
 		}
 	}
 	else if (range_dimension <= 1) {
@@ -524,21 +516,21 @@ void debugger_thread(DeviceInstance& I, Tensor& graph)
 {
 	Tensor* last = nullptr;
 	string command, name;
-	cout << "Debugger thread started." << endl;
+	logger << "[debugger] interactive thread started." << endl;
 
 	while (true) {
 		try {
-			cout.flush();
+			logger.flush();
 			cin >> command;
 			if (command == "g" || command == "goto") {
 				if (CLNET_TENSOR_GLOBALS & CLNET_STEP_INTO_MODE) {
 					CLNET_TENSOR_GLOBALS &= ~CLNET_STEP_INTO_MODE;
-					cout << "[debugger] step into mode removed." << endl;
+					logger << "[debugger] step into mode removed." << endl;
 				}
 				char c= cin.peek();
 				if (c == '\n') {
 					_breakpoint = nullptr;
-					cout << "[debugger] breakpoint removed." << endl;
+					logger << "[debugger] breakpoint removed." << endl;
 				}
 				else {
 					cin >> name;
@@ -549,7 +541,7 @@ void debugger_thread(DeviceInstance& I, Tensor& graph)
 					else {
 						cin >> name;
 						breakpoint_hit_times = atoi(name.data());
-						cout << "[debugger] set breakpoint hit times: " << breakpoint_hit_times << endl;
+						logger << "[debugger] set breakpoint hit times: " << breakpoint_hit_times << endl;
 					}
 					breakpoint.notify_all();
 				}
@@ -561,11 +553,11 @@ void debugger_thread(DeviceInstance& I, Tensor& graph)
 			else if (command == "p" || command == "pause") {
 				_breakpoint = graph.peers[0];
 				breakpoint_hit_times = 1;
-				cout << "[debugger] breakpoint added." << endl;
+				logger << "[debugger] breakpoint added." << endl;
 			}
 			else if (command == "s" || command == "step") {
 				CLNET_TENSOR_GLOBALS ^= CLNET_STEP_INTO_MODE;
-				cout << "[debugger] step into mode " << ((CLNET_TENSOR_GLOBALS & CLNET_STEP_INTO_MODE)? "activated." : "removed.") << endl;
+				logger << "[debugger] step into mode " << ((CLNET_TENSOR_GLOBALS & CLNET_STEP_INTO_MODE)? "activated." : "removed.") << endl;
 			}
 			else if (command == "d" || command == "describe") {
 				cin >> name;
@@ -576,13 +568,13 @@ void debugger_thread(DeviceInstance& I, Tensor& graph)
 				char c= cin.peek();
 				if (c == '\n') {
 					microseconds = microseconds > 0? 0 : 1;
-					cout << "[debugger] profile mode " << (microseconds > 0? "activated." : "removed.") << endl;
+					logger << "[debugger] profile mode " << (microseconds > 0? "activated." : "removed.") << endl;
 				}
 				else {
 					cin >> name;
 					if (name == "clear") {
 						kernels_cost.clear();
-						cout << "[debugger] profile results cleared." << endl;
+						logger << "[debugger] profile results cleared." << endl;
 					}
 					else if (name == "list") {
 						vector<Tensor*> tensors;
@@ -592,16 +584,16 @@ void debugger_thread(DeviceInstance& I, Tensor& graph)
 						auto compare = [](Tensor* a, Tensor* b) -> bool { return kernels_cost[a] > kernels_cost[b]; };
 						sort(tensors.begin(), tensors.end(), compare);
 						for (auto tensor : tensors)
-							cout << tensor->alias << ": " << type_name(tensor) << ": \t\t" << millis_string(kernels_cost[tensor] / 1000) << endl;
+							logger << tensor->alias << ": " << type_name(tensor) << ": \t\t" << millis_string(kernels_cost[tensor] / 1000) << endl;
 					}
 				}
 			}
 			else if (command == "rk" || command == "reload_kernel") {
-				cout << "[debugger] waiting ..." << endl;
+				logger << "[debugger] waiting ..." << endl;
 				const auto& device = I.queue.getInfo<CL_QUEUE_DEVICE>();
 				const auto& context = I.queue.getInfo<CL_QUEUE_CONTEXT>();
 				reload_kernels(device, context, I);
-				cout << "[debugger] kernels reloaded." << endl;
+				logger << "[debugger] kernels reloaded." << endl;
 			}
 			else if (command == "save") {
 				cin >> name;
@@ -631,7 +623,7 @@ void debugger_thread(DeviceInstance& I, Tensor& graph)
 					}
 					ofs.close();
 				}
-				cout << "[debugger] parameters " << tensor_names << " saved." << endl;
+				logger << "[debugger] parameters " << tensor_names << " saved." << endl;
 			}
 			else if (command == "load") {
 				cin >> name;
@@ -668,21 +660,21 @@ void debugger_thread(DeviceInstance& I, Tensor& graph)
 						tensor_names += tensors[i]->alias;
 					}
 				}
-				cout << "[debugger] parameters " << tensor_names << " loaded." << endl;
+				logger << "[debugger] parameters " << tensor_names << " loaded." << endl;
 			}
 			else if (command == "quit") {
-				cout << "[debugger] debugger thread terminated." << endl;
+				logger << "[debugger] debugger thread terminated." << endl;
 				debugger = nullptr;
 				_breakpoint = nullptr;
 				breakpoint.notify_all();
 			}
 			else if (command == "exit") {
-				cout << "[debugger] program exited." << endl;
+				logger << "[debugger] program exited." << endl;
 				exit(1);
 			}
 			else if (command == "?" || command == "help") {
-				cout << "[debugger] commands:" << endl;
-				cout << "goto(g)    continue(c)    pause(p)    exit    save    load    reload_kernel(rk)    profile(pf)    quit" << endl;
+				logger << "[debugger] commands:" << endl;
+				logger << "goto(g)    continue(c)    pause(p)    exit    save    load    reload_kernel(rk)    profile(pf)    quit" << endl;
 			}
 			else {
 				vector<int64> low, high, reshaped;
@@ -715,16 +707,16 @@ void debugger_thread(DeviceInstance& I, Tensor& graph)
 							float& target = tensor->learning_rate;
 							if (tensor == nullptr)
 								throw runtime_error(last->alias + " is not type of type::StochasticGradientDescentUpdater.");
-							cout << "[debugger] " << last->alias << ".learning_rate = " << target << endl;
+							logger << "[debugger] " << last->alias << ".learning_rate = " << target << endl;
 							char c= cin.peek();
 							if (c != '\n') {
 								cin >> name;
 								float value;
 								cin >> value;
 								unitary_operation<float>(name, value)(target);
-								cout << "[debugger] " << last->alias << ".learning_rate " << name << " " << value << endl;
+								logger << "[debugger] " << last->alias << ".learning_rate " << name << " " << value << endl;
 								if (name != "=")
-									cout << "[debugger] " << last->alias << ".learning_rate = " << target << endl;
+									logger << "[debugger] " << last->alias << ".learning_rate = " << target << endl;
 							}
 							continue;
 						}
@@ -733,16 +725,16 @@ void debugger_thread(DeviceInstance& I, Tensor& graph)
 							int64& target = reinterpret_cast<int64&>(tensor->max_epoch);
 							if (tensor == nullptr)
 								throw runtime_error(last->alias + " is not type of type::StochasticGradientDescentUpdater.");
-							cout << "[debugger] " << last->alias << ".max_epoch = " << target << endl;
+							logger << "[debugger] " << last->alias << ".max_epoch = " << target << endl;
 							char c= cin.peek();
 							if (c != '\n') {
 								cin >> name;
 								int64 value;
 								cin >> value;
 								unitary_operation<int64>(name, value)(target);
-								cout << "[debugger] " << last->alias << ".max_epoch " << name << " " << value << endl;
+								logger << "[debugger] " << last->alias << ".max_epoch " << name << " " << value << endl;
 								if (name != "=")
-									cout << "[debugger] " << last->alias << ".max_epoch = " << target << endl;
+									logger << "[debugger] " << last->alias << ".max_epoch = " << target << endl;
 							}
 							continue;
 						}
@@ -752,7 +744,7 @@ void debugger_thread(DeviceInstance& I, Tensor& graph)
 								throw runtime_error(type_name(last) + " is not of back::Loss type.");
 							auto L = tensor->L(I);
 							describe_tensor(last);
-							cout << "Loss value: " << L << endl;
+							logger << "Loss value: " << L << endl;
 							continue;
 						}
 						auto pos2 = command.find("]", pos) + 1;
@@ -848,12 +840,12 @@ void debugger_thread(DeviceInstance& I, Tensor& graph)
 						cin >> value;
 						operate_tensor_data<double>(last, low, high, reshaped, I, op, value);
 					}
-					cout << "updated." << endl;
+					logger << "updated." << endl;
 				}
 			}
 		}
 		catch (runtime_error& e) {
-			cout << "[debugger] error: " << e.what() << endl;
+			logger << "[debugger] error: " << e.what() << endl;
 		}
 	}
 }

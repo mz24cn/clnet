@@ -70,11 +70,13 @@ int main(int argc, char** argv)
 		cout << "/nd\t\tturn off debugger thread" << endl;
 		cout << "/ss\t\tstop on startup at root tensor (must turn on debugger)" << endl;
 		cout << "/cpu\t\tuse CPU instead of GPU (GPU is default)" << endl;
+		cout << "/nlogc\t\tturn off console output" << endl;
+		cout << "/logf\t\tlog to file (clnet.log is default log file)" << endl;
 		return 1;
 	}
 
 	Tensor* graph = nullptr;
-	bool use_debugger = true, stop_on_startup = false, list_devices = false, display_structure = false;
+	bool use_debugger = true, stop_on_startup = false, list_devices = false, display_structure = false, console_output = true, log_to_file = false;
 	vector<int> devices;
 	for (int i = 1; i < argc; i++) {
 		string param(argv[i]);
@@ -105,12 +107,20 @@ int main(int argc, char** argv)
 			CLNET_TENSOR_GLOBALS |= CLNET_OPENCL_SHOW_SOURCE;
 		else if (param == "/cpu")
 			OpenCL.device_type = CL_DEVICE_TYPE_CPU;
+		else if (param == "/nlogc")
+			console_output = false;
+		else if (param == "/logf")
+			log_to_file = true;
 		else {
 			cout << "Unknown parameter: " << param << endl;
 			return 1;
 		}
 	}
 
+	if (console_output)
+		logger += cout;
+	if (log_to_file)
+		logger += OpenCL.location + optional<string>("log_file", "clnet.log");
 	bool is_predict = CLNET_TENSOR_GLOBALS & CLNET_PREDICT_ONLY;
 	if (devices.empty())
 		devices = {0};

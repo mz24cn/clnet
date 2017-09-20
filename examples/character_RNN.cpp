@@ -146,7 +146,7 @@ Tensor* predict_charRNN(Tensor& graph, Tensor* lstm_initialzier, CharacterIndexe
 			throw runtime_error("failed to open " + params_file);
 		auto tensors = load_tensors(ifs, I);
 		ifs.close();
-		cout << to_string(tensors.size()) << " parameters successfully loaded." << endl;
+		logger << to_string(tensors.size()) << " parameters successfully loaded." << endl;
 	});
 
 	auto sample = optional<string>("sample", "The ");
@@ -161,7 +161,7 @@ Tensor* predict_charRNN(Tensor& graph, Tensor* lstm_initialzier, CharacterIndexe
 			visited.clear();
 			graph.launch(&visited, &I);
 			wait_for_all_kernels_finished(I);
-			wcout << (wchar_t) c;
+			logger << c;
 		}
 
 		int L = 129 * 3;
@@ -170,7 +170,7 @@ Tensor* predict_charRNN(Tensor& graph, Tensor* lstm_initialzier, CharacterIndexe
 			float* output = I.pointers[&graph];
 			auto n = max_element(output, output + N) - output;
 			auto next = indexer[n];
-			wcout << next;
+			logger << next;
 
 			I.pointers[data][0] = indexer(next);
 			data->download(I, &async);
@@ -178,7 +178,7 @@ Tensor* predict_charRNN(Tensor& graph, Tensor* lstm_initialzier, CharacterIndexe
 			graph.launch(&visited, &I);
 			wait_for_all_kernels_finished(I);
 		}
-		wcout << endl;
+		logger << endl;
 	}, {&graph}, [](InstantTensor* self) -> Tensor*{ return self->peers[0]; });
 
 	return predictor;
@@ -228,7 +228,7 @@ T charRNN(bool is_predict)
 		accuracy = exp(-accuracy / N_chars);
 		size_t duration = optimizer->milliseconds_since_last(I);
 		string speed = epoch == 0? to_string(duration) + "ms" : to_string(1000.0f * N_samples / duration) + "/s";
-		cout << "[" << I.ID << "," << epoch << "," << speed << "] accuracy: " << accuracy  << endl;
+		logger << "[" << I.ID << "," << epoch << "," << speed << "] accuracy: " << accuracy  << endl;
 	});
 //	Gradient(&output)->inputs.push_back(monitor); //compute accuracy for every mini batch
 	return IterativeOptimizer({&initializer}, {&SGD, trainer, monitor}, max_iters);

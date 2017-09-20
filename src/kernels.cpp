@@ -106,7 +106,7 @@ string generate_kernel_sources(DeviceInstance& I, const cl::Device& device, unor
 			kernels.insert(name);
 			sources.append("\n").append(source);
 		}
-//		cout << "****** " << name << endl << code << endl;
+//		logger << "****** " << name << endl << code << endl;
 		tensor_kernels[tensor] = name;
 	}
 	return sources;
@@ -127,9 +127,9 @@ void Tensor::launch(std::set<Tensor*>* executed, void* data, void (*functor)(Ten
 		}
 		if (this == _breakpoint && --breakpoint_hit_times == 0) {
 			int device_id = static_cast<DeviceInstance*>(data)->ID;
-			cout << "[debugger] device " << device_id << " break on " << alias << ": " << type_name(this) << endl;
+			logger << "[debugger] device " << device_id << " break on " << alias << ": " << type_name(this) << endl;
 			breakpoint.wait(breakpoint_lock); //No considering spurious wake-up
-			cout << "[debugger] device " << device_id << " continue to run." << endl;
+			logger << "[debugger] device " << device_id << " continue to run." << endl;
 		}
 		if (microseconds > 0)
 			microseconds = MICROS();
@@ -138,7 +138,7 @@ void Tensor::launch(std::set<Tensor*>* executed, void* data, void (*functor)(Ten
 			wait_for_all_kernels_finished(*static_cast<DeviceInstance*>(data));
 			auto duration = MICROS(microseconds);
 			kernels_cost[this] += duration;
-//			cout << type_name(this) << " " << alias << ": " << duration << "¦Ìs" << endl;
+//			logger << type_name(this) << " " << alias << ": " << duration << "¦Ìs" << endl;
 		}
 	}
 }

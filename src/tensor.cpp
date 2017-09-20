@@ -139,7 +139,7 @@ Tensor& StochasticGradientDescentUpdater(Tensor& graph, float eta, float decay, 
 		if (dynamic_cast<type::Weight*>(param) == nullptr && dynamic_cast<type::Bias*>(param) == nullptr)
 			continue;
 		if (param->gradient == nullptr) {
-			cout << "Gradient of " << param->alias << " not found." << endl;
+			cout << "warning: Gradient of " << param->alias << " not found." << endl;
 			continue;
 		}
 		tensor->peers.push_back(param);
@@ -221,11 +221,11 @@ Tensor* back::Gradient::merge_gradient(Tensor* input)
 			auto merger = dynamic_cast<back::Gradient*>(gradient);
 			if (merger != nullptr)
 				merger->attached = true;
-//			cout << "    G: " << type_name(this) << "/" << alias;
+//			logger << "    G: " << type_name(this) << "/" << alias;
 //			if (input != nullptr)
-//				cout << "    In: " << type_name(input) << "/" << input->alias;
-//			cout << "    GG: " << type_name(gradient) << "/" << gradient->alias;
-//			cout << endl;
+//				logger << "    In: " << type_name(input) << "/" << input->alias;
+//			logger << "    GG: " << type_name(gradient) << "/" << gradient->alias;
+//			logger << endl;
 		}
 		return this;
 }
