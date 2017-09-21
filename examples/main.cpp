@@ -57,10 +57,9 @@ int main(int argc, char** argv)
 	}
 
 	if (argc < 2) {
-		cout << "OpenCLNet [model] [/[0,1,...]] [/p] [/ld] [/ds] [/os] [/nf] [/nd] [/ss] [/cpu] [/: \"{sample}\"] [{key}:{value}]\n";
+		cout << "OpenCLNet [model] [/[0,1,...]] [/p] [/ld] [/ds] [/os] [/nf] [/nd] [/ss] [/cpu] [:{key} {value}]\n";
 		cout << "model\t\tcurrent support: MLP,MLP_softmax,charRNN,MNIST_CNN\n";
-		cout << "{key}:{value}\tprovide named parameters\n";
-		cout << "/: \"{sample}\"\ttext parameter (named as 'sample')\n";
+		cout << ":{key} {value}\tlet named parameter {key} equal to {value}\n";
 		cout << "/ld\t\tlist devices\n";
 		cout << "/[0,1,...]\trunning device no.\n";
 		cout << "/p\t\tpredict mode\n";
@@ -80,23 +79,18 @@ int main(int argc, char** argv)
 	vector<int> devices;
 	for (int i = 1; i < argc; i++) {
 		string param(argv[i]);
-		if (param.length() <= 1 || param[0] != '/') {
-			auto n = param.find(':');
-			if (n != string::npos)
-				key_values[param.substr(0, n)] = param.substr(n + 1);
-			else
-				key_values["model"] = param;
-		}
+		if (param.empty())
+			return 1;
+		else if (param[0] == ':')
+			key_values[param.substr(1)] = argv[++i];
+		else if (param == "/p")
+			CLNET_TENSOR_GLOBALS |= CLNET_PREDICT_ONLY;
+		else if (param[1] == '[' && param[param.length() - 1] == ']')
+			parse_dimensions<int>(param.substr(1), &devices);
 		else if (param == "/nd")
 			use_debugger = false;
 		else if (param == "/ss")
 			stop_on_startup = true;
-		else if (param[1] == '[' && param[param.length() - 1] == ']')
-			parse_dimensions<int>(param.substr(1), &devices);
-		else if (param == "/p")
-			CLNET_TENSOR_GLOBALS |= CLNET_PREDICT_ONLY;
-		else if (param == "/:")
-			key_values["sample"] = argv[++i];
 		else if (param == "/ld")
 			list_devices = true;
 		else if (param == "/ds")
@@ -111,10 +105,8 @@ int main(int argc, char** argv)
 			console_output = false;
 		else if (param == "/logf")
 			log_to_file = true;
-		else {
-			cout << "Unknown parameter: " << param << endl;
-			return 1;
-		}
+		else
+			key_values["model"] = param;
 	}
 
 	if (log_to_file) {
