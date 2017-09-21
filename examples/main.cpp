@@ -57,20 +57,20 @@ int main(int argc, char** argv)
 	}
 
 	if (argc < 2) {
-		cout << "OpenCLNet [model] [/[0,1,...]] [/p] [/ld] [/ds] [/os] [/nf] [/nd] [/ss] [/cpu] [/: \"{sample}\"] [{key}:{value}]" << endl;
-		cout << "model\t\tcurrent support: MLP,MLP_softmax,charRNN,MNIST_CNN" << endl;
-		cout << "{key}:{value}\tprovide named parameters" << endl;
-		cout << "/: \"{sample}\"\ttext parameter (named as 'sample')" << endl;
-		cout << "/ld\t\tlist devices" << endl;
-		cout << "/[0,1,...]\trunning device no." << endl;
-		cout << "/p\t\tpredict mode" << endl;
-		cout << "/ds\t\tdisplay structure" << endl;
-		cout << "/os\t\tdisplay opencl source" << endl;
-		cout << "/nf\t\tturn off fusion optimization" << endl;
-		cout << "/nd\t\tturn off debugger thread" << endl;
-		cout << "/ss\t\tstop on startup at root tensor (must turn on debugger)" << endl;
-		cout << "/cpu\t\tuse CPU instead of GPU (GPU is default)" << endl;
-		cout << "/nlogc\t\tturn off console output" << endl;
+		cout << "OpenCLNet [model] [/[0,1,...]] [/p] [/ld] [/ds] [/os] [/nf] [/nd] [/ss] [/cpu] [/: \"{sample}\"] [{key}:{value}]\n";
+		cout << "model\t\tcurrent support: MLP,MLP_softmax,charRNN,MNIST_CNN\n";
+		cout << "{key}:{value}\tprovide named parameters\n";
+		cout << "/: \"{sample}\"\ttext parameter (named as 'sample')\n";
+		cout << "/ld\t\tlist devices\n";
+		cout << "/[0,1,...]\trunning device no.\n";
+		cout << "/p\t\tpredict mode\n";
+		cout << "/ds\t\tdisplay structure\n";
+		cout << "/os\t\tdisplay opencl source\n";
+		cout << "/nf\t\tturn off fusion optimization\n";
+		cout << "/nd\t\tturn off debugger thread\n";
+		cout << "/ss\t\tstop on startup at root tensor (must turn on debugger)\n";
+		cout << "/cpu\t\tuse CPU instead of GPU (GPU is default)\n";
+		cout << "/nlogc\t\tturn off console output\n";
 		cout << "/logf\t\tlog to file (clnet.log is default log file)" << endl;
 		return 1;
 	}
@@ -117,10 +117,18 @@ int main(int argc, char** argv)
 		}
 	}
 
+	if (log_to_file) {
+		logger += optional<string>("log_file", OpenCL.location + "clnet.log");
+		for (auto p = argv, end = argv + argc; p < end; p++) {
+			string param(*p);
+			if (param.find(' ') != string::npos)
+				param = "\"" + param + "\"";
+			logger << param << " ";
+		}
+		logger << endl;
+	}
 	if (console_output)
 		logger += cout;
-	if (log_to_file)
-		logger += OpenCL.location + optional<string>("log_file", "clnet.log");
 	bool is_predict = CLNET_TENSOR_GLOBALS & CLNET_PREDICT_ONLY;
 	if (devices.empty())
 		devices = {0};
@@ -187,7 +195,7 @@ T kernel_test()
 		wait_for_all_kernels_finished(I);
 		result->upload(I);
 		for (float* p = I.pointers[result], *end = p + result->dimensions[0]; p < end; p++)
-			cout << *p << endl;
+			cout << *p << "\n";
 	}, [](InstantTensor* self, DeviceInstance& I) -> string{ //This example used as a trial to test OpenCL kernel code
 		return std::string{R"CLC(
 kernel void kernel_test(global float* out, global float* a, global float* b, const int index_size)

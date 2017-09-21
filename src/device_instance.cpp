@@ -49,7 +49,7 @@ void reload_kernels(const cl::Device& device, const cl::Context& context, Device
 	cl::Program program(context, source);
 	try {
 		if (CLNET_TENSOR_GLOBALS & CLNET_OPENCL_SHOW_SOURCE)
-			logger << "****** source code ******\n" << source << endl;
+			logger << "cl_build_options: " << cl_build_options << "\nsource code:\n" << source << endl;
 		program.build(cl_build_options.c_str());
 	}
 	catch (cl::Error& e) {
@@ -384,41 +384,39 @@ void OpenCL_::print_device_info(ostream& out)
 		if (platform_id != current) {
 			current = platform_id;
 			cl::Platform platform0(current);
-			out << "OpenCL Platforms: " << platform0.getInfo<CL_PLATFORM_NAME>() << endl;
-			out << "Version:          " << platform0.getInfo<CL_PLATFORM_VERSION>() << endl;
-			out << "Vendor:           " << platform0.getInfo<CL_PLATFORM_VENDOR>() << endl;
-			out << "Profile:          " << platform0.getInfo<CL_PLATFORM_PROFILE>() << endl;
-			out << "Platform Devices: " << endl;
+			out << "OpenCL Platforms: " << platform0.getInfo<CL_PLATFORM_NAME>() << "\n";
+			out << "Version:          " << platform0.getInfo<CL_PLATFORM_VERSION>() << "\n";
+			out << "Vendor:           " << platform0.getInfo<CL_PLATFORM_VENDOR>() << "\n";
+			out << "Profile:          " << platform0.getInfo<CL_PLATFORM_PROFILE>() << "\n";
+			out << "Platform Devices: " << "\n";
 		}
 		string name = device.getInfo<CL_DEVICE_NAME>();
 		auto deviceType = device.getInfo<CL_DEVICE_TYPE>();
 		auto sizesItem = device.getInfo<CL_DEVICE_MAX_WORK_ITEM_SIZES>();
 
-		out << "\tDevice Name:         " << name << endl;
-		out << "\tclNET device ID:     " << n << endl;
+		out << "\tDevice Name:         " << name << "\n";
+		out << "\tclNET device ID:     " << n << "\n";
 		out << "\tType:                ";
 		switch (deviceType) {
 		case CL_DEVICE_TYPE_CPU: out << "CPU"; break;
 		case CL_DEVICE_TYPE_GPU: out << "GPU"; break;
 		default: out << "OTHER"; break;
 		}
-		out << endl;
-		out << "\tVersion:             " << device.getInfo<CL_DEVICE_VERSION>() << '/' << device.getInfo<CL_DRIVER_VERSION>() << endl;
-		out << "\tGlobal/Local Memory: " << device.getInfo<CL_DEVICE_GLOBAL_MEM_SIZE>() << '/' << device.getInfo<CL_DEVICE_LOCAL_MEM_SIZE>() << " bytes" << endl;
-		out << "\tMax ComputeUnits:    " << device.getInfo<CL_DEVICE_MAX_COMPUTE_UNITS>() << endl;
+		out << "\n\tVersion:             " << device.getInfo<CL_DEVICE_VERSION>() << '/' << device.getInfo<CL_DRIVER_VERSION>() << "\n";
+		out << "\tGlobal/Local Memory: " << device.getInfo<CL_DEVICE_GLOBAL_MEM_SIZE>() << '/' << device.getInfo<CL_DEVICE_LOCAL_MEM_SIZE>() << " bytes\n";
+		out << "\tMax ComputeUnits:    " << device.getInfo<CL_DEVICE_MAX_COMPUTE_UNITS>() << "\n";
 		out << "\tMax WorkItem Sizes:  [" << sizesItem[0];
 		for (size_t i = 1; i < sizesItem.size(); i++)
 			out << ',' << sizesItem[i];
-		out << ']' << endl;
+		out << "]\n";
 		out << "\tBuiltIn Kernels:     ";
 		try {
 			out << device.getInfo<CL_DEVICE_BUILT_IN_KERNELS>();
 		} catch (cl::Error& e) {
-			out << "Error in " << e.what() << " (" << e.err() << "): " << clErrorCodeDescriptions[-e.err()] << endl;
+			out << "Error in " << e.what() << " (" << e.err() << "): " << clErrorCodeDescriptions[-e.err()] << "\n";
 		}
-		out << endl;
-		out << "\tExtensions:          " << device.getInfo<CL_DEVICE_EXTENSIONS>() << endl;
-		out << endl;
+		out << "\n\tExtensions:          " << device.getInfo<CL_DEVICE_EXTENSIONS>();
+		out << "\n" << endl;
 	}
 }
 
@@ -489,7 +487,7 @@ void OpenCL_::run(Tensor& graph, vector<int> targetDeviceIDs, bool use_debugger)
 		}
 		catch (cl::Error& e) {
 			if (_current != nullptr)
-				logger << "Current Tensor: " << type_name(_current) << ": " << _current->alias << endl;
+				logger << "Current Tensor: " << type_name(_current) << ": " << _current->alias << "\n";
 			logger << "Error in " << e.what() << " (" << e.err() << "): " << clErrorCodeDescriptions[e.err() < MIN_ERROR_CODE? -USER_ERROR_DESCRIPTION_UNDEFINED : -e.err()] << endl;
 		}
 		catch (runtime_error& e) {
@@ -508,7 +506,7 @@ void display_tensor_name(Tensor* current, void* padding)
 			logger << "," << current->dimensions[i];
 		logger << "]";
 	}
-	logger << endl;
+	logger << "\n";
 
 	auto structure = dynamic_cast<type::Structured*>(current);
 	if (structure == nullptr)
@@ -530,6 +528,7 @@ void OpenCL_::print_tensor_structure(Tensor& graph)
 	string padding;
 	set<Tensor*> visited;
 	graph.launch(&visited, static_cast<void*>(&padding), display_tensor_name);
+	logger << endl;
 }
 
 void OpenCL_::deallocate_all_tensors()
@@ -651,6 +650,8 @@ Logger::Logger() : count(0) {}
 
 Logger& Logger::operator +=(std::string filename)
 {
+	//This sentance leads to the stream never normally closed.Considering this method is designed to unexpected occasion such as driver crash, I reserved it for convenience.
+	//For the occasion which concerns close behavior, use Logger::operator +=(ostream& os) instead.
 	streams[count++] = new ofstream(filename, std::ofstream::binary | std::ofstream::out | std::ofstream::app);
 	return *this;
 }
@@ -658,20 +659,14 @@ Logger& Logger::operator +=(std::string filename)
 Logger& Logger::operator +=(ostream& os)
 {
 	streams[count++] = &os;
-		return *this;
+	return *this;
 }
 
 Logger& Logger::operator <<(ostream& (*fp)(ostream&))
 {
-	for (int i = 0; i < count; i++)
-		*streams[i] << fp;
+	for (auto p = streams, end = p + count; p < end; p++)
+		**p << fp;
 	return *this;
-}
-
-void Logger::flush()
-{
-	for (int i = 0; i < count; i++)
-		streams[i]->flush();
 }
 
 }

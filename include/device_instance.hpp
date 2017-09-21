@@ -90,12 +90,11 @@ public:
 
 	template <typename T> Logger& operator <<(const T& content)
 	{
-		for (int i = 0; i < count; i++)
-			*streams[i] << content;
+		for (auto p = streams, end = p + count; p < end; p++)
+			**p << content;
 		return *this;
 	}
 	Logger& operator <<(std::ostream& (*fp)(std::ostream&));
-	void flush();
 };
 extern Logger logger;
 

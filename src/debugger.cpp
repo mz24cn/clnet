@@ -299,30 +299,30 @@ void describe_tensor(Tensor* tensor, bool only_name = true)
 		return;
 	}
 
-	logger << "\tthis:\t\t\t\t" << tensor << endl;
-	logger << "\ttype:\t\t\t" << type_name(tensor) << endl;
-	logger << "\talias:\t\t\t" << tensor->alias << endl;
-	logger << "\tvolume:\t\t\t" << tensor->volume << endl;
+	logger << "\tthis:\t\t\t\t" << tensor;
+	logger << "\n\ttype:\t\t\t" << type_name(tensor);
+	logger << "\n\talias:\t\t\t" << tensor->alias;
+	logger << "\n\tvolume:\t\t\t" << tensor->volume;
 
-	logger << "\tdimensions:\t\t[";
+	logger << "\n\tdimensions:\t\t[";
 	if (!tensor->dimensions.empty())
 		logger << tensor->dimensions[0];
 	for (size_t i = 1; i < tensor->dimensions.size(); i++)
 		logger << "," << tensor->dimensions[i];
-	logger << "]" << endl;
+	logger << "]";
 
-	logger << "\tsize:\t\t\t\t" << tensor->size << " bytes" << endl;
-	logger << "\tpointer:\t\t\t" << tensor->pointer << endl;
-	logger << "\tgradient:\t\t";
+	logger << "\n\tsize:\t\t\t\t" << tensor->size << " bytes";
+	logger << "\n\tpointer:\t\t\t" << tensor->pointer;
+	logger << "\n\tgradient:\t\t";
 	describe_tensor(tensor->gradient);
 
-	logger << "\tinputs:" << endl;
+	logger << "\tinputs:\n";
 	for (auto input : tensor->inputs) {
 		logger << "\t\t";
 		describe_tensor(input);
 	}
 
-	logger << "\tpeers:" << endl;
+	logger << "\tpeers:\n";
 	for (auto peer : tensor->peers) {
 		logger << "\t\t";
 		describe_tensor(peer);
@@ -414,13 +414,13 @@ template <typename T> void operate_tensor_data(Tensor* tensor, vector<int64>& lo
 		number = [](int type, int64 i) {
 			switch (type) {
 			case 0:
-				logger << i << ":" << endl; break;
+				logger << i << ":\n"; break;
 			case 1:
 				logger << i << ":\t"; break;
 			case 2:
 				logger << ","; break;
 			case 3:
-				logger << endl; break;
+				logger << "\n"; break;
 			case -1:
 				logger << "\t"; break;
 			}
@@ -449,17 +449,17 @@ template <typename T> void operate_tensor_data(Tensor* tensor, vector<int64>& lo
 			throw runtime_error("Update requires range. try to add \"[:]\".");
 
 		for (int k = 0; k < max_z; k++) {
-			logger << k << endl;
+			logger << k << "\n";
 			for (int i = 0; i < max_y; i++) {
 				logger << i << ":\t" << data[k * NR * NC + i * NC];
 				for (int j = 1; j < max_x; j++)
 					logger << "," << data[k * NR * NC + i * NC + j];
 				if (extra_x)
 					logger << " ...";
-				logger << endl;
+				logger << "\n";
 			}
 			if (extra_y)
-				logger << " ..." << endl;
+				logger << " ...\n";
 		}
 	}
 	else if (range_dimension <= 1) {
@@ -520,7 +520,6 @@ void debugger_thread(DeviceInstance& I, Tensor& graph)
 
 	while (true) {
 		try {
-			logger.flush();
 			cin >> command;
 			if (command == "g" || command == "goto") {
 				if (CLNET_TENSOR_GLOBALS & CLNET_STEP_INTO_MODE) {
@@ -553,7 +552,7 @@ void debugger_thread(DeviceInstance& I, Tensor& graph)
 			else if (command == "p" || command == "pause") {
 				_breakpoint = graph.peers[0];
 				breakpoint_hit_times = 1;
-				logger << "[debugger] breakpoint added." << endl;
+				logger << "[debugger] breakpoint added on " << _breakpoint->alias << "." << endl;
 			}
 			else if (command == "s" || command == "step") {
 				CLNET_TENSOR_GLOBALS ^= CLNET_STEP_INTO_MODE;
@@ -589,7 +588,7 @@ void debugger_thread(DeviceInstance& I, Tensor& graph)
 				}
 			}
 			else if (command == "rk" || command == "reload_kernel") {
-				logger << "[debugger] waiting ..." << endl;
+				logger << "[debugger] waiting ...\n";
 				const auto& device = I.queue.getInfo<CL_QUEUE_DEVICE>();
 				const auto& context = I.queue.getInfo<CL_QUEUE_CONTEXT>();
 				reload_kernels(device, context, I);
@@ -673,7 +672,7 @@ void debugger_thread(DeviceInstance& I, Tensor& graph)
 				exit(1);
 			}
 			else if (command == "?" || command == "help") {
-				logger << "[debugger] commands:" << endl;
+				logger << "[debugger] commands:\n";
 				logger << "goto(g)    continue(c)    pause(p)    exit    save    load    reload_kernel(rk)    profile(pf)    quit" << endl;
 			}
 			else {
