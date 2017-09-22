@@ -299,7 +299,7 @@ void describe_tensor(Tensor* tensor, bool only_name = true)
 		return;
 	}
 
-	logger << "\tthis:\t\t\t\t" << tensor;
+	logger << "\tthis:\t\t\t" << tensor;
 	logger << "\n\ttype:\t\t\t" << type_name(tensor);
 	logger << "\n\talias:\t\t\t" << tensor->alias;
 	logger << "\n\tvolume:\t\t\t" << tensor->volume;
@@ -311,8 +311,8 @@ void describe_tensor(Tensor* tensor, bool only_name = true)
 		logger << "," << tensor->dimensions[i];
 	logger << "]";
 
-	logger << "\n\tsize:\t\t\t\t" << tensor->size << " bytes";
-	logger << "\n\tpointer:\t\t\t" << tensor->pointer;
+	logger << "\n\tsize:\t\t\t" << tensor->size << " bytes";
+	logger << "\n\tpointer:\t\t" << tensor->pointer;
 	logger << "\n\tgradient:\t\t";
 	describe_tensor(tensor->gradient);
 

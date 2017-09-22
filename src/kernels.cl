@@ -577,11 +577,23 @@ kernel void feed_forward_convolution_activation_relu(global float* out, const gl
 			int cin = cout * stride_width + kc - padding_width;
 			if (rin < 0 || rin >= in_height || cin < 0 || cin >= in_width)
 				continue;
-			for (int channel = 0; channel < in_depth; channel++) { //cross channel
-				int in_index = ((n * in_height + rin) * in_width + cin) * in_depth + channel;
-				int weight_index = ((filter * kernel_height + kr) * kernel_width + kc) * in_depth + channel;
-				sum += weight[weight_index] * in[in_index];
-			}
+			int weight_index = ((filter * kernel_height + kr) * kernel_width + kc) * in_depth;
+			int in_index = ((n * in_height + rin) * in_width + cin) * in_depth;
+#ifdef CONVOLUTION_VECTOR
+			int channel = 16;
+			float16 sum16 = 0;
+			for (; channel <= in_depth; channel += 16, weight_index += 16, in_index += 16)
+				sum16 += (*(global float16*) (weight + weight_index)) * (*(global float16*) (in + in_index)); //error CL_OUT_OF_RESOURCES on NVIDIA GTX1050Ti, driver version 382.05
+			float8 sum8 = sum16.lo + sum16.hi;
+			float4 sum4 = sum8.lo + sum8.hi;
+			float2 sum2 = sum4.lo + sum4.hi;
+			sum += sum2.lo + sum2.hi;
+			for (channel -= 16; channel < in_depth; channel++) //cross channel
+				sum += weight[weight_index++] * in[in_index++];
+#else
+			for (int channel = 0; channel < in_depth; channel++) //cross channel
+				sum += weight[weight_index++] * in[in_index++];
+#endif
 		}
 	out[offset] = relu(sum);
 }
@@ -602,15 +614,19 @@ kernel void back_propagate_convolution_relu_gradient(global float* weight_grad/*
 
 	const int GID = ((filter * kernel_height + kr) * kernel_width + kc) * in_depth + kd;
 	float sum_weight_grad = 0, sum_bias_grad = 0;
-	for (int n = 0; n < batch_size; n++)
-		for (int rout = 0; rout < out_height; rout++)
+	int in_offset = kd;
+	int out_offset = filter;
+	for (int n = 0; n < batch_size; n++, in_offset += in_height * in_width * in_depth, out_offset += out_height * out_width * out_depth)
+		for (int rout = 0; rout < out_height; rout++) {
+			int rin = rout * stride_height + kr - padding_height;
+			if (rin < 0 || rin >= in_height)
+				continue;
 			for (int cout = 0; cout < out_width; cout++) {
-				int rin = rout * stride_height + kr - padding_height;
 				int cin = cout * stride_width + kc - padding_width;
-				if (rin < 0 || rin >= in_height || cin < 0 || cin >= in_width)
+				if (cin < 0 || cin >= in_width)
 					continue;
-				int in_index = ((n * in_height + rin) * in_width + cin) * in_depth + kd;
-				int out_index = ((n * out_height + rout) * out_width + cout) * out_depth + filter;
+				int in_index = in_offset + (rin * in_width + cin) * in_depth;
+				int out_index = out_offset + (rout * out_width + cout) * out_depth;
 				float out_gradient = out_grad[out_index];
 				float func_grad = relu_gradient(out[out_index]);
 				float data = in[in_index];
@@ -618,6 +634,7 @@ kernel void back_propagate_convolution_relu_gradient(global float* weight_grad/*
 				sum_bias_grad += gradient;
 				sum_weight_grad += gradient * data;
 			}
+		}
 	weight_grad[GID] += sum_weight_grad;
 	if (kr == 0 && kc == 0 && kd == 0 && bias_grad != NULL)
 		bias_grad[filter] += sum_bias_grad;
@@ -638,20 +655,22 @@ kernel void back_propagate_convolution_relu_gradient_for_input(global float* in_
 
 	const int GID = ((n * in_height + rin) * in_width + cin) * in_depth + channel;
 	float sum_in_grad = 0;
-	for (int filter = 0; filter < out_depth; filter++)
-		for (int kr = 0; kr < kernel_height; kr++)
-			for (int kc = 0; kc < kernel_width; kc++) {
-				int rout = (rin - kr + padding_height) / stride_height;
-				int cout = (cin - kc + padding_width) / stride_width;
-				if (rout < 0 || rout >= out_height || cout < 0 || cout >= out_width)
-					continue;
-				int weight_index = ((filter * kernel_height + kr) * kernel_width + kc) * in_depth + channel;
-				int out_index = ((n * out_height + rout) * out_width + cout) * out_depth + filter;
+	const int kernel_volume = kernel_height * kernel_width * in_depth;
+	for (int kr = 0; kr < kernel_height; kr++)
+		for (int kc = 0; kc < kernel_width; kc++) {
+			int rout = (rin - kr + padding_height) / stride_height;
+			int cout = (cin - kc + padding_width) / stride_width;
+			if (rout < 0 || rout >= out_height || cout < 0 || cout >= out_width)
+				continue;
+			int out_index = ((n * out_height + rout) * out_width + cout) * out_depth;
+			int weight_index = (kr * kernel_width + kc) * in_depth + channel;
+			for (int filter = 0; filter < out_depth; filter++, weight_index += kernel_volume) {
 				float out_gradient = out_grad[out_index];
-				float func_grad = relu_gradient(out[out_index]);
+				float func_grad = relu_gradient(out[out_index++]);
 				float factor = weight[weight_index];
 				sum_in_grad += func_grad * out_gradient * factor;
 			}
+		}
 	in_grad[GID] = sum_in_grad;
 }
 
