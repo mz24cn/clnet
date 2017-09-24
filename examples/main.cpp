@@ -5,6 +5,7 @@
  *      Author: ZhangHua
  */
 
+#include <csignal>
 #include <iostream>
 #include <fstream>
 
@@ -50,6 +51,11 @@ string locate_resources(string path)
 
 int main(int argc, char** argv)
 {
+	signal(SIGINT, [](int signal) {
+		cout << "User breaks by Ctrl+C." << endl;
+		exit(1);
+	});
+
 	OpenCL.location = locate_resources(argv[0]);
 	if (OpenCL.location.empty()) {
 		cout << "LICENSE file not found. Cannot locate resource file (argv[0]: " << argv[0] << "). Use powershell instead in Windows OS." << endl;

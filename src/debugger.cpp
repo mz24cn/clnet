@@ -679,7 +679,9 @@ void debugger_thread(DeviceInstance& I, Tensor& graph)
 				vector<int64> low, high, reshaped;
 				string subprints;
 				int which;
-				if (command[0] == '^') {
+				if (command.empty()) //When Ctrl+C hits.
+					break;
+				else if (command[0] == '^') {
 					which = command[1] == '^'? 2 : 1;
 					command = command.substr(which);
 				}

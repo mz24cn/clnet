@@ -491,14 +491,14 @@ string type::StochasticGradientDescentUpdater::generate_source_code(DeviceInstan
 
 void type::StochasticGradientDescentUpdater::run(DeviceInstance& I)
 {
-	if (I.gradients_state == (int) peers.size())
+	if (I.gradients_state == static_cast<int>(peers.size()))
 		for (auto tensor : peers) { //report gradients
 			auto grad = tensor->gradient;
 			I.queue.enqueueReadBuffer(I.buffers[grad], CL_FALSE, 0, grad->size, I.pointers[grad], NULL, &I.events[grad]);
 			I.events[grad].setCallback(CL_COMPLETE, gradients_event_callback, &I);
 		}
 
-	if (I.parameters_state == (int) peers.size())
+	if (I.parameters_state == static_cast<int>(peers.size()))
 		for (auto param : peers) { //load parameters
 			I.queue.enqueueWriteBuffer(I.buffers[param], CL_FALSE, 0, param->size, I.pointers[param], NULL, &I.events[param]);
 			I.events[param].setCallback(CL_COMPLETE, parameters_event_callback, &I);
@@ -519,7 +519,7 @@ void type::StochasticGradientDescentUpdater::run(DeviceInstance& I)
 	}
 }
 
-void type::StochasticGradientDescentUpdater::run_globally(DeviceInstance& I, DeviceInstance& target, Tensor& global_data)
+void type::StochasticGradientDescentUpdater::run_globally(DeviceInstance& I, DeviceInstance& source, Tensor& global_data)
 {
 	auto& kernel = I.kernels[this];
 	cl::Event event;
@@ -529,7 +529,7 @@ void type::StochasticGradientDescentUpdater::run_globally(DeviceInstance& I, Dev
 		auto gradient = peers[i];
 		auto& gradient_buffer = I.buffers[global_data.inputs[i]];
 		auto& parameter_buffer = I.buffers[global_data.peers[i]];
-		I.queue.enqueueWriteBuffer(gradient_buffer, CL_FALSE, 0, gradient->size, target.pointers[gradient], NULL, &event);
+		I.queue.enqueueWriteBuffer(gradient_buffer, CL_FALSE, 0, gradient->size, source.pointers[gradient], NULL, &event);
 		preconditions.push_back(event);
 
 		kernel.setArg(0, parameter_buffer);
