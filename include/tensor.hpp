@@ -16,6 +16,7 @@
 #include <random>
 #include <functional>
 #include <climits>
+#include <mutex>
 
 #if CL_HPP_TARGET_OPENCL_VERSION < 200
 #define __CL_ENABLE_EXCEPTIONS
@@ -107,6 +108,8 @@ void generate_all_gradients(Tensor* graph);
 #define CLNET_OPENCL_SHOW_SOURCE 16
 #define CLNET_IMAGE_CHANNEL_FIRST 32 //currently it is not supported
 #define CLNET_VALUE_MISMATCH_WARN 64
+#define CLNET_RUN_ON_SINGLE_DEVICE 128
+#define CLNET_RUN_ON_DISTRIBUTION 256
 extern size_t CLNET_TENSOR_GLOBALS;
 
 // clnet::type **************************************************************************
@@ -127,7 +130,7 @@ struct MiniBatch : Tensor {
 };
 
 struct IterativeOptimizer : Tensor, type::Structured {
-	size_t max_epoch;
+	size_t max_epochs;
 
 	size_t& current_epoch(DeviceInstance& I);
 	size_t milliseconds_since_last(DeviceInstance& I);
@@ -138,11 +141,9 @@ struct IterativeOptimizer : Tensor, type::Structured {
 
 struct Updater : Tensor, type::Structured {
 	void synchronize_device_parameters(DeviceInstance& I);
-	void launch_global_updater_thread(DeviceInstance& I);
 	void global_updater_thread(DeviceInstance& I);
-	void stop_global_updater_thread();
 
-	virtual void run_globally(DeviceInstance& I, DeviceInstance& target, Tensor& global_data) {}
+	virtual void run_globally(DeviceInstance& I, DeviceInstance& source) {}
 	virtual std::vector<Tensor*> auxiliaries() override;
 };
 
@@ -152,13 +153,16 @@ struct StochasticGradientDescentUpdater : Updater {
 //	StochasticGradientDescentUpdater(std::vector<Tensor*> grads, float eta, float decay);
 	virtual std::string generate_source_code(DeviceInstance& I) override;
 	virtual void run(DeviceInstance& I) override;
-	virtual void run_globally(DeviceInstance& I, DeviceInstance& target, Tensor& global_data) override;
+	virtual void run_globally(DeviceInstance& I, DeviceInstance& source) override;
 };
 
 struct XavierNormalDistributionInitializer : Tensor, type::Structured {
 	float mu, sigma;
+	bool initialized = false;
+	std::mutex initialization;
 
 	virtual void run(DeviceInstance& I) override;
+	virtual void run_globally(DeviceInstance& I);
 	virtual std::vector<Tensor*> auxiliaries() override;
 };
 

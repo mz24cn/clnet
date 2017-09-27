@@ -520,7 +520,7 @@ void train_on_device(int device)
 
 //	for (int ID : targetDeviceIDs)
 //		DeviceInstance::ALL[ID] = ID;
-	size_t dev_no, deviceNum = targetDeviceIDs.size();
+	int dev_no, deviceNum = targetDeviceIDs.size();
 //	thread_barrier barrier(deviceNum);
 #pragma omp parallel for
 	for (dev_no = 0; dev_no < deviceNum; dev_no++) {

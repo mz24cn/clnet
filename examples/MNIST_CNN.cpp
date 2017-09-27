@@ -24,8 +24,8 @@ public:
 		peers.push_back(read_mnist_images(path + "t10k-images.idx3-ubyte", "test_images", size));
 		peers.push_back(read_mnist_labels(path + "t10k-labels.idx1-ubyte", "test_labels", size));
 
-		set_total_samples(peers[0]->dimensions[0]);
-		peers.push_back(new type::MiniBatch(size, peers[2]->dimensions[0])); //peers[4]
+		set_total_samples(peers[0]->dimensions[0]/*640*/); //small value is used for debug
+		peers.push_back(new type::MiniBatch(size, peers[2]->dimensions[0]/*160*/)); //peers[4]
 	}
 
 	void save_as_24bits_bmp(int start, int end, bool is_test_data, string path) {
@@ -130,7 +130,7 @@ T MNIST_CNN(bool is_predict)
 		return inference;
 
 	const float learning_rate = optional<double>("learning_rate", 0.0002), weight_decay = optional<double>("weight_decay", 0);
-	const int max_iters = optional<int>("max_iters", 5000);
+	const int max_epochs = optional<int>("max_epochs", 5000);
 	T label = *new Tensor({batch_size}, {}, "train_images_label");
 	label.dependent_on(iterator);
 	T loss = SoftmaxLoss(inference, label);
@@ -152,7 +152,7 @@ T MNIST_CNN(bool is_predict)
 		accuracy = exp(-accuracy / batch_size);
 		size_t duration = optimizer->milliseconds_since_last(I);
 		string speed = epoch == 0? to_string(duration) + "ms" : to_string(1000.0f * N_samples / duration) + "/s";
-		logger << "[" << I.ID << "," << epoch << "," << speed << "] accuracy: " << accuracy  << endl;
+		logger << "[" << I.ID << "," << epoch << "," << speed << "] train accuracy: " << accuracy;
 
 		ofstream ofs(clnetparams_file, ostream::binary);
 		for (size_t i = 0; i < parameters.size(); i++)
@@ -160,10 +160,10 @@ T MNIST_CNN(bool is_predict)
 		ofs.close();
 	});
 	auto validator = new InstantTensor("MNIST_CNN_validator", {}, [iterator, class_num, &inference, &label](InstantTensor* self, DeviceInstance& I) {
-		auto optimizer = static_cast<type::IterativeOptimizer*>(self->peers[0]);
-		auto epoch = optimizer->current_epoch(I);
-		if (epoch % 10 != 0)
-			return;
+//		auto optimizer = static_cast<type::IterativeOptimizer*>(self->peers[0]);
+//		auto epoch = optimizer->current_epoch(I);
+//		if (epoch % 10 != 0)
+//			return;
 
 		set<Tensor*> visited;
 		auto tester = static_cast<type::MiniBatch*>(iterator->peers[4]);
@@ -183,8 +183,8 @@ T MNIST_CNN(bool is_predict)
 					correct++;
 		}
 		float accuracy = (int) (10000.0f * correct / iterator->peers[2]->dimensions[0]) / 100.0f;
-		logger << "[" << I.ID << "," << epoch << "] test set accuracy: " << accuracy  << "%" << endl;
+		logger << "\ttest set accuracy: " << accuracy  << "%" << endl;
 		offset = -1; //random_shuffle on test set is not needed.
 	}, {}, [&inference](InstantTensor* self) -> Tensor*{ return &inference; });
-	return IterativeOptimizer({&initializer}, {&SGD, iterator, monitor, validator}, max_iters);
+	return IterativeOptimizer({&initializer}, {&SGD, iterator, monitor, validator}, max_epochs);
 }

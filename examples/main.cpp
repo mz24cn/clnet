@@ -53,6 +53,9 @@ int main(int argc, char** argv)
 {
 	signal(SIGINT, [](int signal) {
 		cout << "User breaks by Ctrl+C." << endl;
+		CLNET_TENSOR_GLOBALS |= CLNET_STEP_INTO_MODE;
+		for (auto& iter : DeviceInstance::ALL)
+			wait_for_all_kernels_finished(iter.second);
 		exit(1);
 	});
 
@@ -63,20 +66,20 @@ int main(int argc, char** argv)
 	}
 
 	if (argc < 2) {
-		cout << "OpenCLNet [model] [/[0,1,...]] [/p] [/ld] [/ds] [/os] [/nf] [/nd] [/ss] [/cpu] [:{key} {value}]\n";
+		cout << "OpenCLNet [model] [/[0,1,...]] [/p] [/ld] [/ds] [/os] [/nf] [/nd] [/ss] [/all] [:{key} {value}]\n";
 		cout << "model\t\tcurrent support: MLP,MLP_softmax,charRNN,MNIST_CNN\n";
-		cout << ":{key} {value}\tlet named parameter {key} equal to {value}\n";
+		cout << ":{key} {value}\tset named parameter with {key}, {value} pair\n";
 		cout << "/ld\t\tlist devices\n";
-		cout << "/[0,1,...]\trunning device no.\n";
+		cout << "/[0,1,...]\trunning device ID (Global update thread runs on the first device)\n";
 		cout << "/p\t\tpredict mode\n";
 		cout << "/ds\t\tdisplay structure\n";
 		cout << "/os\t\tdisplay opencl source\n";
 		cout << "/nf\t\tturn off fusion optimization\n";
 		cout << "/nd\t\tturn off debugger thread\n";
 		cout << "/ss\t\tstop on startup at root tensor (must turn on debugger)\n";
-		cout << "/cpu\t\tuse CPU instead of GPU (GPU is default)\n";
+		cout << "/all\t\tuse all device types including CPU and ACCELERATOR (GPU only is default)\n";
 		cout << "/nlogc\t\tturn off console output\n";
-		cout << "/logf\t\tlog to file (clnet.log is default log file)" << endl;
+		cout << "/logf\t\tlog to file ({project root}/clnet.log is default log file)" << endl;
 		return 1;
 	}
 
@@ -105,8 +108,8 @@ int main(int argc, char** argv)
 			CLNET_TENSOR_GLOBALS ^= CLNET_FEED_FORWARD_FUSION | CLNET_BACK_PROPAGATE_FUSION;
 		else if (param == "/os")
 			CLNET_TENSOR_GLOBALS |= CLNET_OPENCL_SHOW_SOURCE;
-		else if (param == "/cpu")
-			OpenCL.device_type = CL_DEVICE_TYPE_CPU;
+		else if (param == "/all")
+			OpenCL.device_type = CL_DEVICE_TYPE_ALL;
 		else if (param == "/nlogc")
 			console_output = false;
 		else if (param == "/logf")

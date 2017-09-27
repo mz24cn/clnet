@@ -25,13 +25,12 @@ int MAX_X = 40, MAX_Y = 10, MAX_Z = 5;
 
 namespace clnet {
 extern Tensor *_current, *_breakpoint;
-extern size_t microseconds, breakpoint_hit_times;
+extern int64 microseconds, breakpoint_hit_times;
 extern unordered_map<Tensor*, size_t> kernels_cost;
 
+int debugger_device_id;
 thread *debugger;
 condition_variable breakpoint;
-mutex breakpoint_mutex;
-unique_lock<mutex> breakpoint_lock(breakpoint_mutex);
 
 // high resolution timer. Generally using MILLIS() is enough.
 size_t MICROS(size_t microseconds)
@@ -514,9 +513,10 @@ template <typename T> void operate_tensor_data(Tensor* tensor, vector<int64>& lo
 
 void debugger_thread(DeviceInstance& I, Tensor& graph)
 {
+	debugger_device_id = I.ID;
 	Tensor* last = nullptr;
 	string command, name;
-	logger << "[debugger] interactive thread started." << endl;
+	logger << "[debugger] interactive thread started on device " << I.ID << "." << endl;
 
 	while (true) {
 		try {
@@ -536,7 +536,7 @@ void debugger_thread(DeviceInstance& I, Tensor& graph)
 					_breakpoint = locate_tensor(name);
 					c = cin.peek();
 					if (c == '\n')
-						breakpoint_hit_times = 1;
+						breakpoint_hit_times = -1;
 					else {
 						cin >> name;
 						breakpoint_hit_times = atoi(name.data());
@@ -546,12 +546,12 @@ void debugger_thread(DeviceInstance& I, Tensor& graph)
 				}
 			}
 			else if (command == "c" || command == "continue") {
-				breakpoint_hit_times = 1;
+				breakpoint_hit_times = -1;
 				breakpoint.notify_all();
 			}
 			else if (command == "p" || command == "pause") {
 				_breakpoint = graph.peers[0];
-				breakpoint_hit_times = 1;
+				breakpoint_hit_times = -1;
 				logger << "[debugger] breakpoint added on " << _breakpoint->alias << "." << endl;
 			}
 			else if (command == "s" || command == "step") {
@@ -605,7 +605,7 @@ void debugger_thread(DeviceInstance& I, Tensor& graph)
 				if (name == "csv") {
 					cin >> name;
 					for (size_t i = 0; i < tensors.size(); i++) {
-						string file = OpenCL.location + name + tensors[i]->alias + ".csv";
+						string file = name + tensors[i]->alias + ".csv";
 						save_tensor_as_csv(tensors[i], file, I);
 						if (i > 0)
 							tensor_names += ", ";
@@ -613,7 +613,7 @@ void debugger_thread(DeviceInstance& I, Tensor& graph)
 					}
 				}
 				else {
-					ofstream ofs(OpenCL.location + name, ostream::binary);
+					ofstream ofs(name, ostream::binary);
 					for (size_t i = 0; i < tensors.size(); i++) {
 						save_tensor(tensors[i], ofs, I);
 						if (i > 0)
@@ -642,7 +642,7 @@ void debugger_thread(DeviceInstance& I, Tensor& graph)
 					}
 					tensor_names.clear();
 					for (auto file : names) {
-						file = OpenCL.location + prefix + file + ".csv";
+						file = prefix + file + ".csv";
 						auto tensor = load_tensor_from_csv(file, I);
 						if (!tensor_names.empty())
 							tensor_names += ", ";
@@ -650,7 +650,7 @@ void debugger_thread(DeviceInstance& I, Tensor& graph)
 					}
 				}
 				else {
-					ifstream ifs(OpenCL.location + name, istream::binary);
+					ifstream ifs(name, istream::binary);
 					vector<Tensor*> tensors = load_tensors(ifs, I);
 					ifs.close();
 					for (size_t i = 0; i < tensors.size(); i++) {
@@ -672,8 +672,27 @@ void debugger_thread(DeviceInstance& I, Tensor& graph)
 				exit(1);
 			}
 			else if (command == "?" || command == "help") {
-				logger << "[debugger] commands:\n";
-				logger << "goto(g)    continue(c)    pause(p)    exit    save    load    reload_kernel(rk)    profile(pf)    quit" << endl;
+				logger << "[debugger] commands references:\n";
+				logger << "goto(g)    continue(c)    pause(p)    describe(d)    setp(s)    exit    save    load    reload_kernel(rk)    profile(pf)    quit    help(?)\n";
+				logger << "{tensor_name}[...]:{data_type}             //display Tensor {tensor_name} in range [...] with {data_type}\n";
+				logger << "^{tensor_name}[...]:{data_type}            //display Tensor {tensor_name} host-side buffer in range [...] with {data_type} on debugger device\n";
+				logger << "{tensor_name}[...] += 0.001                //add each element in Tensor {tensor_name} range [...] with float value 0.001\n";
+				logger << "{tensor_name}[...0]:int [...1] = 2         //set each integral element in Tensor {tensor_name} range [...0] (reshaped with [...1]) with int value 2\n";
+				logger << "SGD.learning_rate *= 0.1                   //set Tensor SGD learning_rate to be 10% of original value\n";
+				logger << "describe(d) {tensor_name}                  //describe Tensor {tensor_name}\n";
+				logger << "goto(g)                                    //remove breakpoint\n";
+				logger << "goto(g) [{tensor_name}]                    //set breakpoint at Tensor {tensor_name} for all devices\n";
+				logger << "goto(g) [{tensor_name}] [{hit_times}]      //set breakpoint at Tensor {tensor_name} with condition of {hit_times}, only on debugger device\n";
+				logger << "step(s)                                    //toggle step into mode to be enable or disable\n";
+				logger << "pf                                         //toggle performace profile to be enable or disable\n";
+				logger << "pf list                                    //display sorted profiling data\n";
+				logger << "pf clear                                   //clear profiling data\n";
+				logger << "save {file_path}                           //save parameters to file {file_path} with binary format\n";
+				logger << "save csv {file_path} {tensor1} {...2} ...  //save parameters to separated files in directory {file_path} with csv format\n";
+				logger << "load {file_path}                           //load parameters from file {file_path} with binary format\n";
+				logger << "load csv {file_path} {tensor1} {...2} ...  //load parameters from separated files in directory {file_path} with csv format\n";
+				logger << "exit                                       //terminate the program running\n";
+				logger << endl;
 			}
 			else {
 				vector<int64> low, high, reshaped;
@@ -721,21 +740,21 @@ void debugger_thread(DeviceInstance& I, Tensor& graph)
 							}
 							continue;
 						}
-						else if (attrib == "max_epoch") {
+						else if (attrib == "max_epochs") {
 							auto tensor = dynamic_cast<type::IterativeOptimizer*>(last);
-							int64& target = reinterpret_cast<int64&>(tensor->max_epoch);
+							int64& target = reinterpret_cast<int64&>(tensor->max_epochs);
 							if (tensor == nullptr)
 								throw runtime_error(last->alias + " is not type of type::StochasticGradientDescentUpdater.");
-							logger << "[debugger] " << last->alias << ".max_epoch = " << target << endl;
+							logger << "[debugger] " << last->alias << ".max_epochs = " << target << endl;
 							char c= cin.peek();
 							if (c != '\n') {
 								cin >> name;
 								int64 value;
 								cin >> value;
 								unitary_operation<int64>(name, value)(target);
-								logger << "[debugger] " << last->alias << ".max_epoch " << name << " " << value << endl;
+								logger << "[debugger] " << last->alias << ".max_epochs " << name << " " << value << endl;
 								if (name != "=")
-									logger << "[debugger] " << last->alias << ".max_epoch = " << target << endl;
+									logger << "[debugger] " << last->alias << ".max_epochs = " << target << endl;
 							}
 							continue;
 						}
@@ -848,6 +867,7 @@ void debugger_thread(DeviceInstance& I, Tensor& graph)
 		catch (runtime_error& e) {
 			logger << "[debugger] error: " << e.what() << endl;
 		}
+		command.clear(); //needed by Ctrl+C support
 	}
 }
 

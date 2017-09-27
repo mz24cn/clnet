@@ -29,10 +29,11 @@ unordered_map<string, string> kernels_source;
 unordered_map<Tensor*, size_t> kernels_cost;
 
 extern string cl_build_options;
+extern int debugger_device_id;
 extern condition_variable breakpoint;
-extern unique_lock<mutex> breakpoint_lock;
+mutex breakpoint_mutex;
 Tensor *_current, *_breakpoint = nullptr;
-size_t microseconds = 0, breakpoint_hit_times = 1;
+int64 microseconds = 0, breakpoint_hit_times = -1; //paused on all devices initially
 
 template <typename T> bool read_file_content(const string file, basic_string<T>& content)
 {
@@ -123,13 +124,17 @@ void Tensor::launch(std::set<Tensor*>* executed, void* data, void (*functor)(Ten
 		_current = this;
 		if (CLNET_TENSOR_GLOBALS & CLNET_STEP_INTO_MODE) {
 			_breakpoint = this;
-			breakpoint_hit_times = 1;
+			breakpoint_hit_times = -1;
 		}
-		if (this == _breakpoint && --breakpoint_hit_times == 0) {
-			int device_id = static_cast<DeviceInstance*>(data)->ID;
-			logger << "[debugger] device " << device_id << " break on " << alias << ": " << type_name(this) << endl;
-			breakpoint.wait(breakpoint_lock); //No considering spurious wake-up
-			logger << "[debugger] device " << device_id << " continue to run." << endl;
+		if (this == _breakpoint) {
+			auto I = static_cast<DeviceInstance*>(data);
+			int device_id = I->ID;
+			if (breakpoint_hit_times < 0 || (debugger_device_id == device_id && --breakpoint_hit_times == 0)) {
+				logger << "[debugger] device " << device_id << " break on " << alias << ": " << type_name(this) << endl;
+				unique_lock<mutex> breakpoint_lock(breakpoint_mutex);
+				breakpoint.wait(breakpoint_lock); //No considering spurious wake-up
+				logger << "[debugger] device " << device_id << " continue to run." << endl;
+			}
 		}
 		if (microseconds > 0)
 			microseconds = MICROS();
@@ -463,7 +468,7 @@ void type::IterativeOptimizer::run(DeviceInstance& I)
 	size_t& epoch = current_epoch(I);
 	milliseconds_since_last(I);
 	MiniBatch* batcher = dynamic_cast<MiniBatch*>(peers[1]);
-	for (; epoch < max_epoch; epoch++) {
+	for (; epoch < max_epochs; epoch++) {
 		if (batcher == nullptr) {
 			visited.clear();
 			graph->launch(&visited, &I);
@@ -492,43 +497,50 @@ string type::StochasticGradientDescentUpdater::generate_source_code(DeviceInstan
 void type::StochasticGradientDescentUpdater::run(DeviceInstance& I)
 {
 	if (I.gradients_state == static_cast<int>(peers.size()))
-		for (auto tensor : peers) { //report gradients
-			auto grad = tensor->gradient;
-			I.queue.enqueueReadBuffer(I.buffers[grad], CL_FALSE, 0, grad->size, I.pointers[grad], NULL, &I.events[grad]);
+		for (auto param : peers) { //report gradients
+			auto grad = param->gradient;
+			I.precondition_events.clear();
+			I.precondition_events.push_back(I.events[grad]);
+			I.queue.enqueueReadBuffer(I.buffers[grad], CL_FALSE, 0, grad->size, I.pointers[grad], &I.precondition_events, &I.events[grad]);
 			I.events[grad].setCallback(CL_COMPLETE, gradients_event_callback, &I);
 		}
 
-	if (I.parameters_state == static_cast<int>(peers.size()))
+	if (I.parameters_state == static_cast<int>(peers.size())) {
 		for (auto param : peers) { //load parameters
-			I.queue.enqueueWriteBuffer(I.buffers[param], CL_FALSE, 0, param->size, I.pointers[param], NULL, &I.events[param]);
+			I.precondition_events.clear();
+			I.precondition_events.push_back(I.events[param->gradient]);
+			I.queue.enqueueWriteBuffer(I.buffers[param], CL_FALSE, 0, param->size, I.pointers[param], &I.precondition_events, &I.events[param]);
+			I.queue.enqueueFillBuffer<float>(I.buffers[param->gradient], 0, 0, param->size, &I.precondition_events, &I.events[param->gradient]);
 			I.events[param].setCallback(CL_COMPLETE, parameters_event_callback, &I);
 		}
+	}
 	else {
 		auto& kernel = I.kernels[this];
 
 		for (int i = 0, N = peers.size(); i < N ; i++) {
+			auto parameter = peers[i];
 			I.precondition_events.clear();
-			I.precondition_events.push_back(I.events[peers[i]->gradient]);
-			kernel.setArg(0, I.buffers[peers[i]]);
-			kernel.setArg(1, I.buffers[peers[i]->gradient]);
+			I.precondition_events.push_back(I.events[parameter->gradient]);
+			kernel.setArg(0, I.buffers[parameter]);
+			kernel.setArg(1, I.buffers[parameter->gradient]);
 			kernel.setArg(2, learning_rate);
 			kernel.setArg(3, weight_decay);
-			cl::NDRange global(peers[i]->volume);
-			I.queue.enqueueNDRangeKernel(kernel, cl::NullRange, global, cl::NullRange, &I.precondition_events, &I.events[peers[i]]);
+			cl::NDRange global(parameter->volume);
+			I.queue.enqueueNDRangeKernel(kernel, cl::NullRange, global, cl::NullRange, &I.precondition_events, &I.events[parameter]);
 		}
 	}
 }
 
-void type::StochasticGradientDescentUpdater::run_globally(DeviceInstance& I, DeviceInstance& source, Tensor& global_data)
+void type::StochasticGradientDescentUpdater::run_globally(DeviceInstance& I, DeviceInstance& source)
 {
 	auto& kernel = I.kernels[this];
 	cl::Event event;
 	vector<cl::Event> preconditions, updates;
 	for (int i = 0, N = peers.size(); i < N; i++) {
-		auto tensor = peers[i]->gradient;
-		auto gradient = peers[i];
-		auto& gradient_buffer = I.buffers[global_data.inputs[i]];
-		auto& parameter_buffer = I.buffers[global_data.peers[i]];
+		auto parameter = peers[i];
+		auto gradient = parameter->gradient;
+		auto& gradient_buffer = I.buffers[gradient];
+		auto& parameter_buffer = I.buffers[parameter];
 		I.queue.enqueueWriteBuffer(gradient_buffer, CL_FALSE, 0, gradient->size, source.pointers[gradient], NULL, &event);
 		preconditions.push_back(event);
 
@@ -536,10 +548,20 @@ void type::StochasticGradientDescentUpdater::run_globally(DeviceInstance& I, Dev
 		kernel.setArg(1, gradient_buffer);
 		kernel.setArg(2, learning_rate);
 		kernel.setArg(3, weight_decay);
-		cl::NDRange global(tensor->volume);
+		cl::NDRange global(parameter->volume);
 		I.queue.enqueueNDRangeKernel(kernel, cl::NullRange, global, cl::NullRange, &preconditions, &event);
 		updates.push_back(event);
 		preconditions.clear();
+	}
+	for (auto& ev : updates)
+		ev.wait();
+	source.gradients_state = static_cast<int>(peers.size());
+
+	updates.clear();
+	for (int i = 0, N = static_cast<int>(peers.size()); i < N; i++) {
+		auto parameter = peers[i];
+		I.queue.enqueueReadBuffer(I.buffers[parameter], CL_FALSE, 0, parameter->size, parameter->pointer, NULL, &event); //put into tensor own data pointer
+		updates.push_back(event);
 	}
 	for (auto& ev : updates)
 		ev.wait();
@@ -550,17 +572,27 @@ void type::Data::run(DeviceInstance& I)
 	download(I, &no_preconditions);
 }
 
-void type::XavierNormalDistributionInitializer::run(DeviceInstance& I)
+void type::XavierNormalDistributionInitializer::run_globally(DeviceInstance& I)
 {
 	default_random_engine generator;
 	for (auto tensor : peers) {
-		if (dynamic_cast<Weight*>(tensor) == nullptr && dynamic_cast<Bias*>(tensor) == nullptr)
-			continue;
-
 		int fan_in = tensor->dimensions.back();
 		normal_distribution<float> distribution(mu, sqrt(sigma / fan_in));
-		for (float *p = I.pointers[tensor], *end = p + tensor->volume; p < end; p++)
+		for (float *p = tensor->pointer, *end = p + tensor->volume; p < end; p++)
 			*p = (float) distribution(generator);
+	}
+}
+
+void type::XavierNormalDistributionInitializer::run(DeviceInstance& I)
+{
+	initialization.lock();
+	if (!initialized) {
+		run_globally(I);
+		initialized = true;
+	}
+	initialization.unlock();
+	for (auto tensor : peers) {
+		memcpy(I.pointers[tensor], tensor->pointer, tensor->size);
 		tensor->download(I, &no_preconditions);
 	}
 }

@@ -14,6 +14,7 @@
 #include <unordered_map>
 #include <mutex>
 #include <condition_variable>
+#include <sstream>
 
 #if CL_HPP_TARGET_OPENCL_VERSION < 200
 #define __CL_ENABLE_EXCEPTIONS
@@ -38,7 +39,6 @@ struct DeviceInstance {
 
 	std::atomic<int> parameters_state;
 	std::atomic<int> gradients_state;
-	size_t parameters_timestamp;
 	std::vector<cl::Event> precondition_events;
 
 	int work_group_size;
@@ -48,7 +48,7 @@ struct DeviceInstance {
 	std::unordered_map<Tensor*, float*> pointers;
 	std::unordered_map<Tensor*, cl::Kernel> kernels;
 
-	explicit DeviceInstance() : ID(-1), parameters_state(0), gradients_state(0), parameters_timestamp(0), work_group_size(0) {}
+	explicit DeviceInstance() : ID(-1), parameters_state(0), gradients_state(0), work_group_size(0) {}
 	void initialize();
 	void free();
 
@@ -64,7 +64,7 @@ private:
 	std::condition_variable cv;
 	size_t count, times, threads_num;
 public:
-	explicit thread_barrier(size_t threads) : count{threads}, times(0), threads_num(threads) { }
+	explicit thread_barrier(size_t threads) : count(threads), times(0), threads_num(threads) { }
 	void wait() {
 		size_t current = times;
 		std::unique_lock<std::mutex> lock{mutex_};
@@ -79,9 +79,12 @@ public:
 };
 
 #define MAX_LOGGER_STREAMS 8
-class Logger {
+class Logger { //thread 'atomic' logger
 	std::ostream* streams[MAX_LOGGER_STREAMS];
 	int count;
+	std::mutex safe_access;
+	std::unordered_map<std::thread::id, std::stringstream> buffers;
+	std::stringstream& thread_buffer();
 
 public:
 	Logger();
@@ -90,8 +93,7 @@ public:
 
 	template <typename T> Logger& operator <<(const T& content)
 	{
-		for (auto p = streams, end = p + count; p < end; p++)
-			**p << content;
+		thread_buffer() << content;
 		return *this;
 	}
 	Logger& operator <<(std::ostream& (*fp)(std::ostream&));

@@ -8,6 +8,7 @@
 #include <iostream>
 #include <vector>
 #include <functional>
+#include <sstream>
 
 #include <tensor.hpp>
 #include <device_instance.hpp>
@@ -15,27 +16,10 @@
 using namespace std;
 using namespace clnet;
 
-struct MLPMonitor : Tensor {
-
-	MLPMonitor(Tensor& loss) { //loss should be put in peers because it should not be run again
-		peers.push_back(&loss);
-	}
-	virtual void run(DeviceInstance& I) override {
-		auto optimizer = static_cast<type::IterativeOptimizer*>(peers[1]);
-		auto epoch = optimizer->current_epoch(I);
-		if (epoch % 2000 != 0)
-			return;
-
-		size_t duration = optimizer->milliseconds_since_last(I);
-		int n = peers[0]->peers[0]->dimensions[0] * 2000;
-		string speed = epoch == 0? to_string(duration) + "ms" : to_string(int(1000.0f * n / duration)) + "/s";
-		logger << "[" << I.ID << "," << epoch << "," << speed << "] error rate: " << static_cast<back::Loss*>(peers[0])->L(I)  << endl;
-	}
-};
-
 T MLP()
 {
-	const int K = 2, N = 128, HIDDEN = 4096, max_iters = 10001;
+	const int K = 2, N = 128, HIDDEN = 4096, max_iters = optional<int>("max_iters", 10001), display_batches = optional<int>("display_batches", 2000);
+	float learning_rate = optional<double>("learning_rate", 0.00001);
 	auto generator = new InstantTensor("data_generator", {}, {}, [](InstantTensor* self, DeviceInstance& I) {
 		float *x = I.pointers[self->peers[0]], *y = I.pointers[self->peers[1]]; //peers[2]: MiniBatch
 		int N = self->peers[0]->dimensions[0];
@@ -62,10 +46,20 @@ T MLP()
 	T l0_output = FullyConnectedLayer(X, l0_weight, &l0_bias, "sigmoid", "FCLayer_0");
 	T l1_output = FullyConnectedLayer(l0_output, l1_weight, &l1_bias, "softrelu", "FCLayer_1");
 	T loss = LinearRegressionLoss(l1_output, Y);
-	T SGD = StochasticGradientDescentUpdater(loss, 0.00001, 0);
+	T SGD = StochasticGradientDescentUpdater(loss, learning_rate, 0);
 
 	T initializer = XavierNormalDistributionInitializer(SGD, 0, 2.34f);
-	auto monitor = new MLPMonitor(loss);
+	auto monitor = new InstantTensor("MLPMonitor", {}, {&loss}, [display_batches](InstantTensor* self, DeviceInstance& I) {
+		auto optimizer = static_cast<type::IterativeOptimizer*>(self->peers[1]);
+		auto epoch = optimizer->current_epoch(I);
+		if (epoch % display_batches != 0)
+			return;
+
+		size_t duration = optimizer->milliseconds_since_last(I);
+		int n = self->peers[0]->peers[0]->dimensions[0] * 2000;
+		string speed = epoch == 0? to_string(duration) + "ms" : to_string(int(1000.0f * n / duration)) + "/s";
+		logger << "[" << I.ID << "," << epoch << "," << speed << "] error rate: " << static_cast<back::Loss*>(self->peers[0])->L(I)  << endl;
+	});
 	return IterativeOptimizer({&initializer}, {&SGD, generator, monitor}, max_iters);
 }
 

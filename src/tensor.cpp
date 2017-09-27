@@ -66,7 +66,7 @@ Tensor& IterativeOptimizer(vector<Tensor*> ins, vector<Tensor*> outs, size_t epo
 	auto tensor = new type::IterativeOptimizer;
 	tensor->shape_with({ static_cast<int64>(sizeof(size_t) * 2 / sizeof(float)) });
 	tensor->alias = "IterativeOptimizer";
-	tensor->max_epoch = epoch;
+	tensor->max_epochs = epoch;
 	tensor->inputs = ins;
 	tensor->peers = outs;
 	for (size_t i = 1; i < outs.size(); i++)

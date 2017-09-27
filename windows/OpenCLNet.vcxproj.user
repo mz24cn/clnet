@@ -1,11 +1,11 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="14.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <LocalDebuggerCommandArguments>MLP /[1] /nf</LocalDebuggerCommandArguments>
+    <LocalDebuggerCommandArguments>MNIST_CNN /nf /[0,1] :mnist_folder E:\DataSets\MNIST\ /logf /ss /ds</LocalDebuggerCommandArguments>
     <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <LocalDebuggerCommandArguments>MLP /[1] /nf</LocalDebuggerCommandArguments>
+    <LocalDebuggerCommandArguments>MLP /nf /[0,1] :mnist_folder E:\DataSets\MNIST\ /logf /ss</LocalDebuggerCommandArguments>
     <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
   </PropertyGroup>
 </Project>

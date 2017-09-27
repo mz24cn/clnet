@@ -20,6 +20,11 @@
 using namespace std;
 using namespace clnet::type;
 
+#define MSG_CODE(ID,CODE) (((int64) ID) << 32) + CODE
+#define MSG_GRADIENTS_READY 1
+#define MSG_PARAMETERS_READY 2
+#define MSG_QUIT 0
+
 namespace clnet {
 extern Tensor* _current;
 
@@ -36,8 +41,7 @@ string cl_build_options = "-cl-std=CL2.0";
 
 thread *global_updater;
 condition_variable notification;
-queue<int> parameters_queue, gradients_queue;
-size_t parameters_timestamp;
+queue<int64> message_queue;
 mutex notification_mutex, queue_mutex, allocate_mutex;
 unique_lock<mutex> notification_lock(notification_mutex);
 
@@ -57,7 +61,7 @@ void reload_kernels(const cl::Device& device, const cl::Context& context, Device
 		throw e;
 	}
 
-	for (auto iter : tensor_kernels) {
+	for (auto& iter : tensor_kernels) {
 		auto tensor = iter.first;
 		const char* name = iter.second.c_str();
 		I.kernels[tensor] = cl::Kernel(program, name);
@@ -86,7 +90,8 @@ void DeviceInstance::initialize()
 #endif
 
 	for (auto tensor : Tensor::ALL)
-		tensor->initialize(this);
+		if (ID >= 0 || dynamic_cast<type::Weight*>(tensor) != nullptr || dynamic_cast<type::Bias*>(tensor) != nullptr || dynamic_cast<back::Gradient*>(tensor) != nullptr)
+			tensor->initialize(this);
 }
 
 DeviceInstance& DeviceInstance::create(cl::Device& cl_device, int id)
@@ -212,7 +217,7 @@ void CL_CALLBACK gradients_event_callback(cl_event, cl_int, void * user_data)
 	DeviceInstance* instance = reinterpret_cast<DeviceInstance*>(user_data);
 	if (instance->gradients_state-- == 1) {
 		queue_mutex.lock();
-		gradients_queue.push(instance->ID);
+		message_queue.push(MSG_CODE(instance->ID, MSG_GRADIENTS_READY));
 		queue_mutex.unlock();
 		notification.notify_all();
 	}
@@ -223,124 +228,61 @@ void CL_CALLBACK parameters_event_callback(cl_event, cl_int, void * user_data)
 	DeviceInstance* instance = reinterpret_cast<DeviceInstance*>(user_data);
 	if (instance->parameters_state-- == 1) {
 		queue_mutex.lock();
-		parameters_queue.push(instance->ID);
+		message_queue.push(MSG_CODE(instance->ID, MSG_PARAMETERS_READY));
 		queue_mutex.unlock();
 		notification.notify_all();
 	}
 }
 
-void Updater::launch_global_updater_thread(DeviceInstance& I)
-{
-	global_updater = new thread(&Updater::global_updater_thread, this, ref(I));
-}
-
-void Updater::stop_global_updater_thread()
-{
-	thread* updater = global_updater;
-	global_updater = nullptr;
-	notification.notify_all();
-	if (updater != nullptr) {
-		updater->join();
-		delete updater;
-	}
-}
-
 void Updater::synchronize_device_parameters(DeviceInstance& I)
 {
-	if (I.parameters_state > 0)
-		return;
-	int i, N = peers.size();
+	if (I.ID < 0 || I.parameters_state > 0)
+		return; //already disposed in MSG_GRADIENTS_READY
+	int i, N = static_cast<int>(peers.size());
 #pragma omp parallel for
 	for (i = 0; i < N; i++) {
-		auto tensor = peers[i]->gradient;
-		memcpy(I.pointers[tensor], I.pointers[tensor], tensor->size);
+		auto parameter = peers[i];
+		memcpy(I.pointers[parameter], parameter->pointer, parameter->size);
 	}
-	I.parameters_timestamp = parameters_timestamp;
 	I.parameters_state = peers.size();
 }
 
 void Updater::global_updater_thread(DeviceInstance& I)
 {
-//	vector<cl::Buffer> parameters_buffer, gradients_buffer;
-	Tensor& global_data = *new Tensor({}, {}, alias + "_global_data");
-	const auto& context = I.queue.getInfo<CL_QUEUE_CONTEXT>();
-	for (auto tensor : peers) {
-		auto parameter = new Tensor({}, {}, alias + ":" + tensor->alias);
-		global_data.peers.push_back(parameter);
-		I.buffers[parameter] = cl::Buffer(context, CL_MEM_READ_WRITE|CL_MEM_USE_HOST_PTR, tensor->size, I.pointers[tensor->gradient]);
-		auto gradient = new Tensor({}, {}, "gradient(" + alias + ":" + tensor->alias + ")");
-		global_data.inputs.push_back(gradient);
-		I.buffers[gradient] = cl::Buffer(context, CL_MEM_READ_WRITE|CL_MEM_ALLOC_HOST_PTR, tensor->size);
-//		parameters_buffer.push_back(cl::Buffer(context, CL_MEM_READ_WRITE|CL_MEM_USE_HOST_PTR, tensor->size, tensor->pointer));
-//		gradients_buffer.push_back(cl::Buffer(context, CL_MEM_READ_WRITE|CL_MEM_ALLOC_HOST_PTR, tensor->size));
-	}
+	bool running = true;
+	while (running) {
+		notification.wait(notification_lock, [] { return !message_queue.empty(); });
 
-//	cl::Kernel& kernel = I.kernels[this];
-	cl::Event event;
-	vector<cl::Event> updates;
-	while (global_updater != nullptr) {
-		notification.wait(notification_lock, [] { return !gradients_queue.empty() || global_updater == nullptr; }); //TODO: global_updater == nullptr is needed?
+		queue_mutex.lock();
+		int64 command = message_queue.front();
+		message_queue.pop();
+		queue_mutex.unlock();
+		int64 message = command & 0xFFFFFFFF;
+		int ID = static_cast<int>(command >> 32);
+		DeviceInstance& source = DeviceInstance::ALL[ID];
 
-		bool have_data = !gradients_queue.empty();
-		while (!gradients_queue.empty()) {
-			queue_mutex.lock();
-			int ID = gradients_queue.front();
-			gradients_queue.pop();
-			queue_mutex.unlock();
-
-			DeviceInstance& instance = DeviceInstance::ALL[ID];
-			run_globally(I, instance, global_data);
-//			vector<cl::Event> preconditions;
-//			for (int i = 0, N = inputs.size(); i < N; i++) {
-//				auto tensor = inputs[i];
-//				auto gradient = peers[i];
-//				I.queue.enqueueWriteBuffer(gradients_buffer[i], CL_FALSE, 0, gradient->size, instance.pointers[gradient], NULL, &event);
-//				preconditions.push_back(event);
-//
-//				kernel.setArg(0, parameters_buffer[i]);
-//				kernel.setArg(1, gradients_buffer[i]);
-//				kernel.setArg(2, learning_rate);
-//				kernel.setArg(3, weight_decay);
-//				cl::NDRange global(tensor->volume);
-//				I.queue.enqueueNDRangeKernel(kernel, cl::NullRange, global, cl::NullRange, &preconditions, &event);
-//				updates.push_back(event);
-//			}
-//			for (auto& ev : updates)
-//				ev.wait();
-			instance.gradients_state = inputs.size();
-		}
-		if (have_data) {
-			updates.clear();
-			for (int i = 0, N = inputs.size(); i < N; i++) {
-				auto tensor = inputs[i];
-				I.queue.enqueueReadBuffer(I.buffers[global_data.peers[i]], CL_FALSE, 0, tensor->size, I.pointers[tensor], NULL, &event);
-				updates.push_back(event);
-			}
-			for (auto& ev : updates)
-				ev.wait();
-			parameters_timestamp = chrono::duration_cast<chrono::milliseconds>(chrono::system_clock::now().time_since_epoch()).count();
+		switch (message) {
+		case MSG_GRADIENTS_READY:
+			run_globally(I, source);
 			for (auto& iter : DeviceInstance::ALL)
 				synchronize_device_parameters(iter.second);
-			updates.clear();
-		}
+			break;
 
-		while (!parameters_queue.empty()) {
-			queue_mutex.lock();
-			int ID = parameters_queue.front();
-			parameters_queue.pop();
-			queue_mutex.unlock();
+		case MSG_PARAMETERS_READY:
+			synchronize_device_parameters(source);
+			break;
 
-			DeviceInstance& instance = DeviceInstance::ALL[ID];
-			if (parameters_timestamp <= instance.parameters_timestamp)
-				continue;
-			synchronize_device_parameters(instance);
+		case MSG_QUIT:
+			I.free();
+			running = false;
+			break;
 		}
 	}
 }
 
 void wait_for_all_kernels_finished(DeviceInstance& I)
 {
-	for (auto iter : I.events)
+	for (auto& iter : I.events)
 		iter.second.wait();
 }
 
@@ -439,6 +381,16 @@ string millis_string(size_t time)
 	return millis;
 }
 
+void stop_global_updater_thread()
+{
+	queue_mutex.lock();
+	message_queue.push(MSG_CODE(-1L, MSG_QUIT));
+	queue_mutex.unlock();
+	notification.notify_all();
+	global_updater->join();
+	delete global_updater;
+}
+
 void OpenCL_::run(Tensor& graph, vector<int> targetDeviceIDs, bool use_debugger)
 {
 	vector<cl::Device>& targetDevices = find_devices();
@@ -447,9 +399,22 @@ void OpenCL_::run(Tensor& graph, vector<int> targetDeviceIDs, bool use_debugger)
 		return;
 	}
 
-	size_t no, deviceNum = targetDeviceIDs.size();
+	int no, deviceNum = (int) targetDeviceIDs.size();
+	if (deviceNum == 1)
+		CLNET_TENSOR_GLOBALS |= CLNET_RUN_ON_SINGLE_DEVICE;
 	auto updater = graph.peers.empty() || deviceNum == 1? nullptr : dynamic_cast<type::Updater*>(graph.peers[0]);
 	thread_barrier barrier(deviceNum);
+	if (updater != nullptr) {
+		auto& device = targetDevices[targetDeviceIDs.front()];
+		const auto& name = device.getInfo<CL_DEVICE_NAME>();
+
+		size_t time = MILLIS(0);
+		auto& I = DeviceInstance::create(device, -1);
+		time = MILLIS(time);
+		logger << "[master] runs on " << name << " (kernels build: " << millis_string(time) << ")" << endl;
+		global_updater = new thread(&Updater::global_updater_thread, updater, ref(I));
+	}
+
 #pragma omp parallel for
 	for (no = 0; no < deviceNum; no++) {
 		try {
@@ -463,24 +428,21 @@ void OpenCL_::run(Tensor& graph, vector<int> targetDeviceIDs, bool use_debugger)
 			logger << "[" << I.ID << "] " << name << " (kernels build: " << millis_string(time) << ")" << endl;
 			if (use_debugger && no == 0)
 				launch_debugger_thread(I, graph);
-
 			if (updater != nullptr) {
-				I.gradients_state = updater->inputs.size();
-				if (no == 0)
-					updater->launch_global_updater_thread(I);
+				I.gradients_state = updater->peers.size();
 				barrier.wait();
 			}
 
 			set<Tensor*> visited;
 			time = MILLIS(0);
 			graph.launch(&visited, &I);
-
 			time = MILLIS(time);
 			logger << "[" << I.ID << "] run time: " << millis_string(time) << "." << endl;
+
 			if (updater != nullptr) {
 				barrier.wait();
 				if (no == 0)
-					updater->stop_global_updater_thread();
+					stop_global_updater_thread();
 				barrier.wait();
 			}
 			I.free();
@@ -488,7 +450,7 @@ void OpenCL_::run(Tensor& graph, vector<int> targetDeviceIDs, bool use_debugger)
 		catch (cl::Error& e) {
 			if (_current != nullptr)
 				logger << "Current Tensor: " << type_name(_current) << ": " << _current->alias << "\n";
-			logger << "Error in " << e.what() << " (" << e.err() << "): " << clErrorCodeDescriptions[e.err() < MIN_ERROR_CODE? -USER_ERROR_DESCRIPTION_UNDEFINED : -e.err()] << endl;
+			logger << "Error in device " << targetDeviceIDs[no] << ": " << e.what() << " (" << e.err() << "): " << clErrorCodeDescriptions[e.err() < MIN_ERROR_CODE? -USER_ERROR_DESCRIPTION_UNDEFINED : -e.err()] << endl;
 		}
 		catch (runtime_error& e) {
 			logger << "Runtime error: " << e.what() << endl;
@@ -662,10 +624,27 @@ Logger& Logger::operator +=(ostream& os)
 	return *this;
 }
 
+std::stringstream& Logger::thread_buffer()
+{
+	stringstream* os;
+	const auto& iter = buffers.find(this_thread::get_id());
+	if (iter != buffers.end())
+		os = &iter->second;
+	else {
+		safe_access.lock();
+		os = &buffers[this_thread::get_id()];
+		safe_access.unlock();
+	}
+	return *os;
+}
+
 Logger& Logger::operator <<(ostream& (*fp)(ostream&))
 {
+	auto& buffer = thread_buffer();
+	buffer << fp;
 	for (auto p = streams, end = p + count; p < end; p++)
-		**p << fp;
+		**p << buffer.str() << flush;
+	buffer.str("");
 	return *this;
 }
 
