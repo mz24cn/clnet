@@ -46,6 +46,7 @@ struct Tensor {
 	virtual Tensor* generate_gradient(Tensor* next = nullptr) { return nullptr; }
 	virtual ~Tensor();
 
+	//generally launch() should NOT be overloaded. It is not declared as final just because of considering for flexibility.
 	virtual void launch(std::set<Tensor*>* executed, void* data, void (*functor)(Tensor*, void*) = [](Tensor* tensor, void* data) { tensor->run(*static_cast<DeviceInstance*>(data)); });
 	virtual void initialize(DeviceInstance* I = nullptr);
 

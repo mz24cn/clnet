@@ -610,7 +610,7 @@ template double optional(string name, double default_value);
 
 Logger::Logger() : count(0) {}
 
-Logger& Logger::operator +=(std::string filename)
+Logger& Logger::operator +=(string filename)
 {
 	//This sentance leads to the stream never normally closed.Considering this method is designed to unexpected occasion such as driver crash, I reserved it for convenience.
 	//For the occasion which concerns close behavior, use Logger::operator +=(ostream& os) instead.
@@ -624,7 +624,7 @@ Logger& Logger::operator +=(ostream& os)
 	return *this;
 }
 
-std::stringstream& Logger::thread_buffer()
+stringstream& Logger::thread_buffer()
 {
 	stringstream* os;
 	const auto& iter = buffers.find(this_thread::get_id());

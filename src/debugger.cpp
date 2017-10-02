@@ -405,7 +405,7 @@ template <typename T> void operate_tensor_data(Tensor* tensor, vector<int64>& lo
 		return data[index];
 	};
 	int64 &d0 = ranges[0], &d1 = ranges[1], &d2 = ranges[2];
-	int64 &i = subprints[d0], &j = subprints[d1], &k = subprints[d2];
+	int64 &i = subprints[d0], &j = subprints[d1], &k = subprints[d2]; //i, j, k should be optimized as pointer by compiler
 
 	auto operation = unitary_operation(op, value);
 	function<void(int, int64)> number;
@@ -503,6 +503,7 @@ template <typename T> void operate_tensor_data(Tensor* tensor, vector<int64>& lo
 	}
 	else
 		throw runtime_error("too many ranges. try to reduce ':'.");
+	logger << endl;
 	if (which == 0) {
 		if (!op.empty())
 			tensor->download(I);
