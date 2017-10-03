@@ -592,10 +592,22 @@ template <> size_t optional(unordered_map<string, string>& map, string name, siz
 	return iter != map.end()? strtoull(iter->second.c_str(), nullptr, 10) : default_value;
 }
 
+template <> int64 optional(unordered_map<string, string>& map, string name, int64 default_value)
+{
+	auto iter = map.find(name);
+	return iter != map.end()? strtoll(iter->second.c_str(), nullptr, 10) : default_value;
+}
+
 template <> double optional(unordered_map<string, string>& map, string name, double default_value)
 {
 	auto iter = map.find(name);
 	return iter != map.end()? atof(iter->second.c_str()) : default_value;
+}
+
+template <> float optional(unordered_map<string, string>& map, string name, float default_value)
+{
+	auto iter = map.find(name);
+	return iter != map.end()? (float) atof(iter->second.c_str()) : default_value;
 }
 
 template <typename T> T optional(std::string name, T default_value)
@@ -606,7 +618,9 @@ template <typename T> T optional(std::string name, T default_value)
 template string optional(string name, string default_value);
 template int optional(string name, int default_value);
 template size_t optional(string name, size_t default_value);
+template int64 optional(string name, int64 default_value);
 template double optional(string name, double default_value);
+template float optional(string name, float default_value);
 
 Logger::Logger() : count(0) {}
 

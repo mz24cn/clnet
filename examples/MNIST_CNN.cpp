@@ -129,7 +129,7 @@ T MNIST_CNN(bool is_predict)
 	if (is_predict)
 		return inference;
 
-	const float learning_rate = optional<double>("learning_rate", 0.0002), weight_decay = optional<double>("weight_decay", 0);
+	const float learning_rate = optional<float>("learning_rate", 0.0002), weight_decay = optional<float>("weight_decay", 0);
 	const int max_epochs = optional<int>("max_epochs", 5000);
 	T label = *new Tensor({batch_size}, {}, "train_images_label");
 	label.dependent_on(iterator);

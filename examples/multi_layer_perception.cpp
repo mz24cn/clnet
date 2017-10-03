@@ -19,7 +19,7 @@ using namespace clnet;
 T MLP()
 {
 	const int K = 2, N = 128, HIDDEN = 4096, max_iters = optional<int>("max_iters", 10001), display_batches = optional<int>("display_batches", 2000);
-	float learning_rate = optional<double>("learning_rate", 0.00001);
+	float learning_rate = optional<float>("learning_rate", 0.00001);
 	auto generator = new InstantTensor("data_generator", {}, {}, [](InstantTensor* self, DeviceInstance& I) {
 		float *x = I.pointers[self->peers[0]], *y = I.pointers[self->peers[1]]; //peers[2]: MiniBatch
 		int N = self->peers[0]->dimensions[0];
