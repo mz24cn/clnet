@@ -5,7 +5,7 @@
     <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <LocalDebuggerCommandArguments>MLP /nf /[0,1] :mnist_folder E:\DataSets\MNIST\ /logf /ss</LocalDebuggerCommandArguments>
+    <LocalDebuggerCommandArguments>kernel_test /ss</LocalDebuggerCommandArguments>
     <DebuggerFlavor>WindowsLocalDebugger</DebuggerFlavor>
   </PropertyGroup>
 </Project>
