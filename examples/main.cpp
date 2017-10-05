@@ -52,7 +52,7 @@ string locate_resources(string path)
 int main(int argc, char** argv)
 {
 	signal(SIGINT, [](int signal) {
-		cout << "User breaks by Ctrl+C." << endl;
+		logger << "User breaks by Ctrl+C." << endl;
 		CLNET_TENSOR_GLOBALS |= CLNET_STEP_INTO_MODE;
 		for (auto& iter : DeviceInstance::ALL)
 			wait_for_all_kernels_finished(iter.second);
@@ -61,23 +61,23 @@ int main(int argc, char** argv)
 
 	OpenCL.location = locate_resources(argv[0]);
 	if (OpenCL.location.empty()) {
-		cout << "LICENSE file not found. Cannot locate resource file (argv[0]: " << argv[0] << "). Use powershell instead in Windows OS." << endl;
+		cout << "LICENSE file not found. Cannot locate kernel file via this executable program. Try accessing " << argv[0] << " in parent directory or in the form of absolute path." << endl;
 		return 1;
 	}
 
 	if (argc < 2) {
-		cout << "OpenCLNet [model] [/[0,1,...]] [/p] [/ld] [/ds] [/os] [/nf] [/nd] [/ss] [/all] [:{key} {value}]\n";
+		cout << "OpenCLNet [model] [/0,1,...] [/p] [/ld] [/ds] [/os] [/nf] [/nd] [/ss] [/all] [:{key} {value}]\n";
 		cout << "model\t\tcurrent support: MLP,MLP_softmax,charRNN,MNIST_CNN\n";
-		cout << ":{key} {value}\tset named parameter with {key}, {value} pair\n";
 		cout << "/ld\t\tlist devices\n";
-		cout << "/[0,1,...]\trunning device ID (Global update thread runs on the first device)\n";
+		cout << "/all\t\tuse all device types including CPU and ACCELERATOR (GPU only is default)\n";
+		cout << ":{key} {value}\tset named parameter with {key}, {value} pair\n";
+		cout << "/0,1,...\trun device ID (use ':master' and ':debugger' to set global update and debugger thread run device)\n";
 		cout << "/p\t\tpredict mode\n";
 		cout << "/ds\t\tdisplay structure\n";
 		cout << "/os\t\tdisplay opencl source\n";
 		cout << "/nf\t\tturn off fusion optimization\n";
 		cout << "/nd\t\tturn off debugger thread\n";
 		cout << "/ss\t\tstop on startup at root tensor (must turn on debugger)\n";
-		cout << "/all\t\tuse all device types including CPU and ACCELERATOR (GPU only is default)\n";
 		cout << "/nlogc\t\tturn off console output\n";
 		cout << "/logf\t\tlog to file ({project root}/clnet.log is default log file)" << endl;
 		return 1;
@@ -94,8 +94,6 @@ int main(int argc, char** argv)
 			key_values[param.substr(1)] = argv[++i];
 		else if (param == "/p")
 			CLNET_TENSOR_GLOBALS |= CLNET_PREDICT_ONLY;
-		else if (param[1] == '[' && param[param.length() - 1] == ']')
-			parse_dimensions<int>(param.substr(1), &devices);
 		else if (param == "/nd")
 			use_debugger = false;
 		else if (param == "/ss")
@@ -114,6 +112,12 @@ int main(int argc, char** argv)
 			console_output = false;
 		else if (param == "/logf")
 			log_to_file = true;
+		else if (param[0] == '/') {
+			if ((param[1] == '[' && param[param.length() - 1] == ']') || (param[1] >= '0' && param[1] <= '9')) //Linux shell strips '[' and ']' in "/[1,2]"
+				parse_dimensions<int>(param.substr(1), &devices);
+			else
+				cout << "Unknown option " << param << " ignored." << endl;
+		}
 		else
 			key_values["model"] = param;
 	}
@@ -133,6 +137,8 @@ int main(int argc, char** argv)
 	bool is_predict = CLNET_TENSOR_GLOBALS & CLNET_PREDICT_ONLY;
 	if (devices.empty())
 		devices = {0};
+	int device_master = optional<int>("master", devices[0]);
+	int device_debugger = optional<int>("debugger", use_debugger? devices[0] : -1);
 	extern T MLP();
 	extern T MLP_softmax();
 	extern T charRNN(bool is_predict);
@@ -168,46 +174,6 @@ int main(int argc, char** argv)
 		OpenCL.print_tensor_structure(*graph);
 	if (stop_on_startup)
 		_breakpoint = graph;
-	OpenCL.run(*graph, devices, use_debugger);
+	OpenCL.run(*graph, devices, device_debugger, device_master);
 	return 0;
-}
-
-T kernel_test()
-{
-	auto a = new Tensor({32}, {}, "a");
-	auto b = new Tensor({32}, {}, "b");
-	auto result = new Tensor({32}, {}, "result");
-	float a_data[32] = {1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1},
-			b_data[32] = {2, 3, 4, 5, 2, 3, 4, 5, 2, 3, 4, 5, 2, 3, 4, 5, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1};
-	a->initialize();
-	b->initialize();
-	memcpy(a->pointer, a_data, sizeof(a_data));
-	memcpy(b->pointer, b_data, sizeof(b_data));
-
-	return *new InstantTensor("kernel_test", {}, {a, b}, [result](InstantTensor* self, DeviceInstance& I) {
-		auto& kernel = prepare_for_running_kernel(self, I);
-		kernel.setArg(0, I.buffers[result]);
-		kernel.setArg(1, I.buffers[self->peers[0]]);
-		kernel.setArg(2, I.buffers[self->peers[1]]);
-		kernel.setArg(3, 2);
-//			cl::NDRange local(2);
-		cl::NDRange global(2);
-		I.queue.enqueueNDRangeKernel(kernel, cl::NullRange, global, cl::NullRange, &I.precondition_events, &I.events[result]);
-		wait_for_all_kernels_finished(I);
-		result->upload(I);
-		for (float* p = I.pointers[result], *end = p + result->dimensions[0]; p < end; p++)
-			cout << *p << "\n";
-	}, [](InstantTensor* self, DeviceInstance& I) -> string{ //This example used as a trial to test OpenCL kernel code
-		return std::string{R"CLC(
-kernel void kernel_test(global float* out, global float* a, global float* b, const int index_size)
-{
-	const int GID = get_global_id(0);
-	float16 result = ((global float16*) a)[GID] * ((global float16*) b)[GID];
-	float8 r8 = result.lo + result.hi;
-	float4 r4 = r8.lo + r8.hi;
-	float2 r2 = r4.lo + r4.hi;
-	out[GID] = r2.lo + r2.hi; 
-}
-)CLC"};
-	});
 }

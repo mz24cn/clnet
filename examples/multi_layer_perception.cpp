@@ -65,7 +65,7 @@ T MLP()
 
 T MLP_softmax()
 {
-	const int P = 28, N = 128, K = 10, max_iters = 20000;
+	const int P = 28, N = 128, K = 10, max_iters = optional<int>("max_iters", 20000);
 	T sym_x = *new Tensor({N, P}, {}, "X");
 	T sym_label = *new Tensor({N}, {}, "label");
 	auto generator = new InstantTensor("data_generator", {}, {&sym_x, &sym_label}, [P, N, K](InstantTensor* self, DeviceInstance& I) {

@@ -391,7 +391,7 @@ void stop_global_updater_thread()
 	delete global_updater;
 }
 
-void OpenCL_::run(Tensor& graph, vector<int> targetDeviceIDs, bool use_debugger)
+void OpenCL_::run(Tensor& graph, vector<int> targetDeviceIDs, int debugger_device_id, int master_device_id)
 {
 	vector<cl::Device>& targetDevices = find_devices();
 	if (targetDevices.empty()) {
@@ -405,13 +405,13 @@ void OpenCL_::run(Tensor& graph, vector<int> targetDeviceIDs, bool use_debugger)
 	auto updater = graph.peers.empty() || deviceNum == 1? nullptr : dynamic_cast<type::Updater*>(graph.peers[0]);
 	thread_barrier barrier(deviceNum);
 	if (updater != nullptr) {
-		auto& device = targetDevices[targetDeviceIDs.front()];
+		auto& device = targetDevices[master_device_id];
 		const auto& name = device.getInfo<CL_DEVICE_NAME>();
 
 		size_t time = MILLIS(0);
 		auto& I = DeviceInstance::create(device, -1);
 		time = MILLIS(time);
-		logger << "[master] runs on " << name << " (kernels build: " << millis_string(time) << ")" << endl;
+		logger << "[master] runs on " << name << " (" << master_device_id << ") (kernels build: " << millis_string(time) << ")" << endl;
 		global_updater = new thread(&Updater::global_updater_thread, updater, ref(I));
 	}
 
@@ -426,7 +426,7 @@ void OpenCL_::run(Tensor& graph, vector<int> targetDeviceIDs, bool use_debugger)
 			auto& I = DeviceInstance::create(device, device_id);
 			time = MILLIS(time);
 			logger << "[" << I.ID << "] " << name << " (kernels build: " << millis_string(time) << ")" << endl;
-			if (use_debugger && no == 0)
+			if (debugger_device_id == device_id)
 				launch_debugger_thread(I, graph);
 			if (updater != nullptr) {
 				I.gradients_state = updater->peers.size();
@@ -583,7 +583,7 @@ template <> string optional(unordered_map<string, string>& map, string name, str
 template <> int optional(unordered_map<string, string>& map, string name, int default_value)
 {
 	auto iter = map.find(name);
-	return iter != map.end()? atoi(iter->second.c_str()) : default_value;
+	return iter != map.end()? stoi(iter->second) : default_value;
 }
 
 template <> size_t optional(unordered_map<string, string>& map, string name, size_t default_value)

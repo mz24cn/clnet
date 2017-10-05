@@ -221,7 +221,7 @@ template <typename T> void parse_dimensions(string subprints, vector<T>* low, ve
 	for (auto& str : ranges) {
 		auto n = str.find(':');
 		if (n == string::npos) {
-			low->push_back(atoi(str.data()));
+			low->push_back(stoi(str));
 			if (high != nullptr)
 				high->push_back(INT_MIN);
 		}
@@ -232,9 +232,9 @@ template <typename T> void parse_dimensions(string subprints, vector<T>* low, ve
 				if (right.empty())
 					high->push_back(INT_MAX);
 				else
-					high->push_back(atoi(right.data()));
+					high->push_back(stoi(right));
 			}
-			int n_left = left.empty()? 0 : atoi(left.data());
+			int n_left = left.empty()? 0 : stoi(left);
 			low->push_back(n_left);
 		}
 	}
@@ -769,7 +769,7 @@ void debugger_thread(DeviceInstance& I, Tensor& graph)
 							continue;
 						}
 						auto pos2 = command.find("]", pos) + 1;
-						auto n = atoi(command.substr(pos, pos2 - pos).data());
+						auto n = stoi(command.substr(pos, pos2 - pos));
 						last = tensors[n];
 						if (command.size() > pos2 && command[pos2] == '[')
 							subprints = command.substr(pos2, command.size() - pos2);

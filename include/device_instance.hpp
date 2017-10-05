@@ -108,7 +108,7 @@ public:
 	std::string location;
 
 	std::vector<cl::Device>& find_devices();
-	void run(Tensor& graph, std::vector<int> targetDeviceIDs = {}, bool use_debugger = false);
+	void run(Tensor& graph, std::vector<int> targetDeviceIDs = {}, int debugger_device_id = -1, int master_device_id = -1);
 	void deallocate_all_tensors();
 	void print_device_info(std::ostream& out);
 	void print_tensor_structure(Tensor& graph);
