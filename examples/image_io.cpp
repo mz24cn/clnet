@@ -89,35 +89,35 @@ typedef long LONG;
 typedef unsigned long DWORD;
 typedef unsigned short WORD;
 
-// Î»Í¼ÎÄ¼şÍ·ÎÄ¼ş¶¨Òå
+// ä½å›¾æ–‡ä»¶å¤´æ–‡ä»¶å®šä¹‰
 #pragma pack(push, 2)
 typedef struct {
-	WORD    bfType; //ÎÄ¼şÀàĞÍ£¬±ØĞëÊÇ0x424D,¼´×Ö·û¡°BM¡±
-	DWORD   bfSize; //ÎÄ¼ş´óĞ¡
-	WORD    bfReserved1; //±£Áô×Ö
-	WORD    bfReserved2; //±£Áô×Ö
-	DWORD   bfOffBits; //´ÓÎÄ¼şÍ·µ½Êµ¼ÊÎ»Í¼Êı¾İµÄÆ«ÒÆ×Ö½ÚÊı
+	WORD    bfType; //æ–‡ä»¶ç±»å‹ï¼Œå¿…é¡»æ˜¯0x424D,å³å­—ç¬¦â€œBMâ€
+	DWORD   bfSize; //æ–‡ä»¶å¤§å°
+	WORD    bfReserved1; //ä¿ç•™å­—
+	WORD    bfReserved2; //ä¿ç•™å­—
+	DWORD   bfOffBits; //ä»æ–‡ä»¶å¤´åˆ°å®é™…ä½å›¾æ•°æ®çš„åç§»å­—èŠ‚æ•°
 } BMPFILEHEADER;
 #pragma pack(pop)
 
 typedef struct{
-	DWORD      biSize; //ĞÅÏ¢Í·´óĞ¡
-	LONG       biWidth; //Í¼Ïñ¿í¶È
-	LONG       biHeight; //Í¼Ïñ¸ß¶È
-	WORD       biPlanes; //Î»Æ½ÃæÊı£¬±ØĞëÎª1
-	WORD       biBitCount; //Ã¿ÏñËØÎ»Êı
-	DWORD      biCompression; //Ñ¹ËõÀàĞÍ
-	DWORD      biSizeImage; //Ñ¹ËõÍ¼Ïñ´óĞ¡×Ö½ÚÊı
-	LONG       biXPelsPerMeter; //Ë®Æ½·Ö±æÂÊ
-	LONG       biYPelsPerMeter; //´¹Ö±·Ö±æÂÊ
-	DWORD      biClrUsed; //Î»Í¼Êµ¼ÊÓÃµ½µÄÉ«²ÊÊı
-	DWORD      biClrImportant; //±¾Î»Í¼ÖĞÖØÒªµÄÉ«²ÊÊı
-} BMPINFOHEADER; //Î»Í¼ĞÅÏ¢Í·¶¨Òå
+	DWORD      biSize; //ä¿¡æ¯å¤´å¤§å°
+	LONG       biWidth; //å›¾åƒå®½åº¦
+	LONG       biHeight; //å›¾åƒé«˜åº¦
+	WORD       biPlanes; //ä½å¹³é¢æ•°ï¼Œå¿…é¡»ä¸º1
+	WORD       biBitCount; //æ¯åƒç´ ä½æ•°
+	DWORD      biCompression; //å‹ç¼©ç±»å‹
+	DWORD      biSizeImage; //å‹ç¼©å›¾åƒå¤§å°å­—èŠ‚æ•°
+	LONG       biXPelsPerMeter; //æ°´å¹³åˆ†è¾¨ç‡
+	LONG       biYPelsPerMeter; //å‚ç›´åˆ†è¾¨ç‡
+	DWORD      biClrUsed; //ä½å›¾å®é™…ç”¨åˆ°çš„è‰²å½©æ•°
+	DWORD      biClrImportant; //æœ¬ä½å›¾ä¸­é‡è¦çš„è‰²å½©æ•°
+} BMPINFOHEADER; //ä½å›¾ä¿¡æ¯å¤´å®šä¹‰
 
-void generate_24bits_bmp(unsigned char* pData, int width, int height, const char* file) //Éú³ÉBmpÍ¼Æ¬£¬´«µİRGBÖµ£¬´«µİÍ¼Æ¬ÏñËØ´óĞ¡£¬´«µİÍ¼Æ¬´æ´¢Â·¾¶
+void generate_24bits_bmp(unsigned char* pData, int width, int height, const char* file) //ç”ŸæˆBmpå›¾ç‰‡ï¼Œä¼ é€’RGBå€¼ï¼Œä¼ é€’å›¾ç‰‡åƒç´ å¤§å°ï¼Œä¼ é€’å›¾ç‰‡å­˜å‚¨è·¯å¾„
 {
-	int size = width * height * 3; //ÏñËØÊı¾İ´óĞ¡
-	// Î»Í¼µÚÒ»²¿·Ö£¬ÎÄ¼şĞÅÏ¢
+	int size = width * height * 3; //åƒç´ æ•°æ®å¤§å°
+	// ä½å›¾ç¬¬ä¸€éƒ¨åˆ†ï¼Œæ–‡ä»¶ä¿¡æ¯
 	BMPFILEHEADER bfh;
 	bfh.bfType = 0x4D42; //bm
 	bfh.bfSize = size + sizeof(BMPFILEHEADER) + sizeof(BMPINFOHEADER);
@@ -125,7 +125,7 @@ void generate_24bits_bmp(unsigned char* pData, int width, int height, const char
 	bfh.bfReserved2 = 0; //reserved
 	bfh.bfOffBits = sizeof(BMPFILEHEADER) + sizeof(BMPINFOHEADER);
 
-	// Î»Í¼µÚ¶ş²¿·Ö£¬Êı¾İĞÅÏ¢
+	// ä½å›¾ç¬¬äºŒéƒ¨åˆ†ï¼Œæ•°æ®ä¿¡æ¯
 	BMPINFOHEADER bih;
 	bih.biSize = sizeof(BMPINFOHEADER);
 	bih.biWidth = width;
