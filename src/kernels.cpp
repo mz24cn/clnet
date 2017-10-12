@@ -143,7 +143,7 @@ void Tensor::launch(std::set<Tensor*>* executed, void* data, void (*functor)(Ten
 			wait_for_all_kernels_finished(*static_cast<DeviceInstance*>(data));
 			auto duration = MICROS(microseconds);
 			kernels_cost[this] += duration;
-//			logger << type_name(this) << " " << alias << ": " << duration << "¦Ìs" << endl;
+//			logger << type_name(this) << " " << alias << ": " << duration << "ï¿½ï¿½s" << endl;
 		}
 	}
 }

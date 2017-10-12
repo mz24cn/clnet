@@ -52,7 +52,7 @@
 									<listOptionValue builtIn="false" srcPrefixMapping="" srcRootPath="" value="gomp"/>
 								</option>
 								<option id="gnu.cpp.link.option.paths.1576659500" name="Library search path (-L)" superClass="gnu.cpp.link.option.paths" useByScannerDiscovery="false" valueType="libPaths">
-									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/OpenCLNet/providers/NVIDIA/lib}&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/OpenCLNet/providers/NVIDIA/lib64}&quot;"/>
 								</option>
 								<inputType id="cdt.managedbuild.tool.gnu.cpp.linker.input.918042814" superClass="cdt.managedbuild.tool.gnu.cpp.linker.input">
 									<additionalInput kind="additionalinputdependency" paths="$(USER_OBJS)"/>
@@ -119,7 +119,7 @@
 									<listOptionValue builtIn="false" srcPrefixMapping="" srcRootPath="" value="gomp"/>
 								</option>
 								<option id="gnu.cpp.link.option.paths.967844685" name="Library search path (-L)" superClass="gnu.cpp.link.option.paths" useByScannerDiscovery="false" valueType="libPaths">
-									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/OpenCLNet/providers/NVIDIA/lib}&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/OpenCLNet/providers/NVIDIA/lib64}&quot;"/>
 								</option>
 								<option id="gnu.cpp.link.option.flags.2079783265" name="Linker flags" superClass="gnu.cpp.link.option.flags" useByScannerDiscovery="false" value="" valueType="string"/>
 								<inputType id="cdt.managedbuild.tool.gnu.cpp.linker.input.826604471" superClass="cdt.managedbuild.tool.gnu.cpp.linker.input">
@@ -187,8 +187,8 @@
 									<listOptionValue builtIn="false" srcPrefixMapping="" srcRootPath="" value="pthread"/>
 								</option>
 								<option id="gnu.cpp.link.option.paths.122099722" name="Library search path (-L)" superClass="gnu.cpp.link.option.paths" useByScannerDiscovery="false" valueType="libPaths">
-									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/OpenCLNet/providers/NVIDIA/lib}&quot;"/>
 									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/OpenCLNet/providers/}&quot;"/>
+									<listOptionValue builtIn="false" value="&quot;${workspace_loc:/OpenCLNet/providers/NVIDIA/lib64}&quot;"/>
 								</option>
 								<option id="gnu.cpp.link.option.flags.2027140151" name="Linker flags" superClass="gnu.cpp.link.option.flags" useByScannerDiscovery="false" value="-m64" valueType="string"/>
 								<inputType id="cdt.managedbuild.tool.gnu.cpp.linker.input.1789873069" superClass="cdt.managedbuild.tool.gnu.cpp.linker.input">

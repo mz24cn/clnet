@@ -342,8 +342,8 @@ template <typename T> function<void(T&)> unitary_operation(string op, T value)
 		throw runtime_error("unsupported operation: " + op);
 }
 
-// Currently only allow display 1D, 2D and 3D data
-template <typename T> void operate_tensor_data(Tensor* tensor, vector<int64>& low, vector<int64>& high, vector<int64>& reshaped, DeviceInstance& I, string op = "0", T value = (T)0)
+//Allow display 1D, 2D and 3D range data for any shape Tensor
+template <typename T> void operate_tensor_data(Tensor* tensor, DeviceInstance& I, const vector<int64> low, const vector<int64> high, const vector<int64> reshaped, string op, T value)
 {
 	if (!reshaped.empty()) {
 		logger << "data[";
@@ -818,48 +818,48 @@ void debugger_thread(DeviceInstance& I, Tensor& graph)
 				string op = to_string(which) + name;
 				if (name.empty()) {
 					if (type == "float")
-						operate_tensor_data<float>(last, low, high, reshaped, I, op);
+						operate_tensor_data<float>(last, I, low, high, reshaped, op);
 					else if (type == "int")
-						operate_tensor_data<int>(last, low, high, reshaped, I, op);
+						operate_tensor_data<int>(last, I, low, high, reshaped, op);
 					else if (type == "char")
-						operate_tensor_data<char>(last, low, high, reshaped, I, op);
+						operate_tensor_data<char>(last, I, low, high, reshaped, op);
 					else if (type == "int64")
-						operate_tensor_data<int64>(last, low, high, reshaped, I, op);
+						operate_tensor_data<int64>(last, I, low, high, reshaped, op);
 					else if (type == "short")
-						operate_tensor_data<short>(last, low, high, reshaped, I, op);
+						operate_tensor_data<short>(last, I, low, high, reshaped, op);
 					else if (type == "double")
-						operate_tensor_data<double>(last, low, high, reshaped, I, op);
+						operate_tensor_data<double>(last, I, low, high, reshaped, op);
 				}
 				else {
 					if (type == "float") {
 						float value;
 						cin >> value;
-						operate_tensor_data<float>(last, low, high, reshaped, I, op, value);
+						operate_tensor_data<float>(last, I, low, high, reshaped, op, value);
 					}
 					else if (type == "int") {
 						int value;
 						cin >> value;
-						operate_tensor_data<int>(last, low, high, reshaped, I, op, value);
+						operate_tensor_data<int>(last, I, low, high, reshaped, op, value);
 					}
 					else if (type == "char") {
 						char value;
 						cin >> value;
-						operate_tensor_data<char>(last, low, high, reshaped, I, op, value);
+						operate_tensor_data<char>(last, I, low, high, reshaped, op, value);
 					}
 					else if (type == "int64") {
 						int64 value;
 						cin >> value;
-						operate_tensor_data<int64>(last, low, high, reshaped, I, op, value);
+						operate_tensor_data<int64>(last, I, low, high, reshaped, op, value);
 					}
 					else if (type == "short") {
 						short value;
 						cin >> value;
-						operate_tensor_data<short>(last, low, high, reshaped, I, op, value);
+						operate_tensor_data<short>(last, I, low, high, reshaped, op, value);
 					}
 					else if (type == "double") {
 						double value;
 						cin >> value;
-						operate_tensor_data<double>(last, low, high, reshaped, I, op, value);
+						operate_tensor_data<double>(last, I, low, high, reshaped, op, value);
 					}
 					logger << "updated." << endl;
 				}

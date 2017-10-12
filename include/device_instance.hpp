@@ -27,7 +27,7 @@
 #define USER_ERROR_DESCRIPTION_UNDEFINED -28
 #define USER_GROUP_SIZE_NOT_BIG_ENOUGH -29
 #define MIN_ERROR_CODE -70
-#define MILLIS(time) (clock() - time) * 1000 / CLOCKS_PER_SEC
+#define MILLIS(time) (MICROS() / 1000 - time)
 
 namespace clnet {
 extern const char* clErrorCodeDescriptions[];
@@ -122,11 +122,12 @@ void wait_for_all_kernels_finished(DeviceInstance& I);
 
 void CL_CALLBACK gradients_event_callback(cl_event, cl_int, void * user_data);
 void CL_CALLBACK parameters_event_callback(cl_event, cl_int, void * user_data);
-
-template <typename T> void parse_dimensions(std::string subprints, std::vector<T>* low, std::vector<T>* high = nullptr, const std::vector<T>* limits = nullptr, std::vector<T>* reshaped = nullptr);
 void launch_debugger_thread(DeviceInstance& I, Tensor& graph);
 size_t MICROS(size_t microseconds = 0);
 std::string millis_string(size_t time);
+
+template <typename T> void parse_dimensions(std::string subprints, std::vector<T>* low, std::vector<T>* high = nullptr, const std::vector<T>* limits = nullptr, std::vector<T>* reshaped = nullptr);
+template <typename T> void operate_tensor_data(Tensor* tensor, DeviceInstance& I, const std::vector<int64> low = {}, const std::vector<int64> high = {}, const std::vector<int64> reshaped = {}, std::string op = "0", T value = (T)0);
 
 template <typename T> T optional(std::string name, T default_value);
 template <typename T> T optional(std::unordered_map<std::string, std::string>& map, std::string name, T default_value);
