@@ -133,5 +133,7 @@ template <typename T> T optional(std::string name, T default_value);
 template <typename T> T optional(std::unordered_map<std::string, std::string>& map, std::string name, T default_value);
 template <typename T> bool read_file_content(const std::string file, std::basic_string<T>& content);
 
+#define replace_once(str, key, value) str.replace(str.find(key), sizeof(key) - 1, value)
+void replace_all(std::string& content, const std::string key, const std::string replace);
 }
 #endif /* INCLUDE_DEVICE_INSTANCE_HPP_ */

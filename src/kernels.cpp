@@ -49,8 +49,6 @@ template <typename T> bool read_file_content(const string file, basic_string<T>&
 
 template bool read_file_content<wchar_t>(const string file, basic_string<wchar_t>& content);
 
-#define replace_once(str, key, value) str = str.replace(str.find(key), sizeof(key) - 1, value)
-
 void replace_all(string& content, const string key, const string replace)
 {
 	string::size_type pos = content.find(key), length = key.size(), span = replace.size();
