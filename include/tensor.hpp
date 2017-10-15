@@ -18,13 +18,11 @@
 #include <climits>
 #include <mutex>
 
-#if CL_HPP_TARGET_OPENCL_VERSION < 200
-#define __CL_ENABLE_EXCEPTIONS
-#include <CL/cl.hpp>
-#else
-#define CL_HPP_ENABLE_EXCEPTIONS
-#include <cl2.hpp>
+#if defined(__GNUC__) && __GNUC__ >= 6
+#pragma GCC diagnostic ignored "-Wignored-attributes"
 #endif
+#define __CL_ENABLE_EXCEPTIONS
+#include "cl.hpp"
 
 namespace clnet {
 typedef long long int64;
@@ -286,16 +284,16 @@ class InstantTensor : public Tensor, public type::Structured {
 public:
 	InstantTensor(std::string name, std::vector<Tensor*> ins = {}, std::vector<Tensor*> outs = {},
 			std::function<void (InstantTensor* self, DeviceInstance&)> run_func = [](InstantTensor* self, DeviceInstance&) {},
-			std::function<std::string (InstantTensor* self, DeviceInstance&)> code_func = [](InstantTensor* self, DeviceInstance&) -> std::string{ return std::string(); },
-			std::function<Tensor* (InstantTensor* self, Tensor*)> gradient_func = [](InstantTensor* self, Tensor*) -> Tensor*{ return nullptr; })
+			std::function<std::string (InstantTensor* self, DeviceInstance&)> code_func = [](InstantTensor* self, DeviceInstance&) -> std::string { return std::string(); },
+			std::function<Tensor* (InstantTensor* self, Tensor*)> gradient_func = [](InstantTensor* self, Tensor*) -> Tensor* { return nullptr; })
 			: Tensor({}, ins, name, outs), source_code_function(code_func), run_function(run_func), gradient_function(gradient_func),
-			body_function([](InstantTensor* self) -> Tensor*{ return self->type::Structured::body(); }), auxiliaries_function([](InstantTensor* self) -> std::vector<Tensor*>{ return self->type::Structured::auxiliaries(); }) {}
+			body_function([](InstantTensor* self) -> Tensor* { return self->type::Structured::body(); }), auxiliaries_function([](InstantTensor* self) -> std::vector<Tensor*> { return self->type::Structured::auxiliaries(); }) {}
 	InstantTensor(std::string name, std::vector<Tensor*> ins = {},
 			std::function<void (InstantTensor* self, DeviceInstance&)> run_func = [](InstantTensor* self, DeviceInstance&) {}, std::vector<Tensor*> outs = {},
-			std::function<Tensor* (InstantTensor* self)> body_func = [](InstantTensor* self) -> Tensor*{ return self->type::Structured::body(); },
-			std::function<std::vector<Tensor*> (InstantTensor* self)> auxiliaries_func = [](InstantTensor* self) -> std::vector<Tensor*>{ return self->type::Structured::auxiliaries(); },
-			std::function<std::string (InstantTensor* self, DeviceInstance&)> code_func = [](InstantTensor* self, DeviceInstance&) -> std::string{ return std::string(); },
-			std::function<Tensor* (InstantTensor* self, Tensor*)> gradient_func = [](InstantTensor* self, Tensor*) -> Tensor*{ return nullptr; })
+			std::function<Tensor* (InstantTensor* self)> body_func = [](InstantTensor* self) -> Tensor* { return self->type::Structured::body(); },
+			std::function<std::vector<Tensor*> (InstantTensor* self)> auxiliaries_func = [](InstantTensor* self) -> std::vector<Tensor*> { return self->type::Structured::auxiliaries(); },
+			std::function<std::string (InstantTensor* self, DeviceInstance&)> code_func = [](InstantTensor* self, DeviceInstance&) -> std::string { return std::string(); },
+			std::function<Tensor* (InstantTensor* self, Tensor*)> gradient_func = [](InstantTensor* self, Tensor*) -> Tensor* { return nullptr; })
 			: Tensor({}, ins, name, outs), source_code_function(code_func), run_function(run_func), gradient_function(gradient_func), body_function(body_func), auxiliaries_function(auxiliaries_func) {}
 
 	virtual std::string generate_source_code(DeviceInstance& I) { return source_code_function(this, I); }

@@ -28,7 +28,6 @@ const vector<cl::Event> no_preconditions;
 unordered_map<string, string> kernels_source;
 unordered_map<Tensor*, size_t> kernels_cost;
 
-extern string cl_build_options;
 extern int debugger_device_id;
 extern condition_variable breakpoint;
 mutex breakpoint_mutex;
@@ -99,7 +98,7 @@ string generate_kernel_sources(DeviceInstance& I, const cl::Device& device, unor
 		if (source.empty())
 			continue;
 		int begin = source.find(KERNEL_DEF) + KERNEL_DEF.size();
-		int end = source.find("(");
+		int end = source.find("(", begin);
 		name = source.substr(begin, end - begin);
 		if (kernels.count(name) == 0) {
 			kernels.insert(name);
@@ -160,7 +159,7 @@ void Tensor::download(DeviceInstance& I, const vector<cl::Event>* preconditions)
 	I.queue.enqueueWriteBuffer(I.buffers[this], preconditions == nullptr, 0, size, I.pointers[this], preconditions, &I.events[this]);
 }
 
-inline int find_proper_local_size(int required, int work_group_size)
+int find_proper_local_size(int required, int work_group_size)
 {
 	if (required < work_group_size) {
 		int parallel = 1;

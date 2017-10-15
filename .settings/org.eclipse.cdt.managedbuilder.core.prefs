@@ -1,4 +1,12 @@
 eclipse.preferences.version=1
+environment/buildEnvironmentInclude/cdt.managedbuild.config.gnu.cross.exe.debug.660732730.1820027406/CPATH/delimiter=;
+environment/buildEnvironmentInclude/cdt.managedbuild.config.gnu.cross.exe.debug.660732730.1820027406/CPATH/operation=remove
+environment/buildEnvironmentInclude/cdt.managedbuild.config.gnu.cross.exe.debug.660732730.1820027406/CPLUS_INCLUDE_PATH/delimiter=;
+environment/buildEnvironmentInclude/cdt.managedbuild.config.gnu.cross.exe.debug.660732730.1820027406/CPLUS_INCLUDE_PATH/operation=remove
+environment/buildEnvironmentInclude/cdt.managedbuild.config.gnu.cross.exe.debug.660732730.1820027406/C_INCLUDE_PATH/delimiter=;
+environment/buildEnvironmentInclude/cdt.managedbuild.config.gnu.cross.exe.debug.660732730.1820027406/C_INCLUDE_PATH/operation=remove
+environment/buildEnvironmentInclude/cdt.managedbuild.config.gnu.cross.exe.debug.660732730.1820027406/append=true
+environment/buildEnvironmentInclude/cdt.managedbuild.config.gnu.cross.exe.debug.660732730.1820027406/appendContributed=true
 environment/buildEnvironmentInclude/cdt.managedbuild.config.gnu.cross.exe.debug.660732730/CPATH/delimiter=;
 environment/buildEnvironmentInclude/cdt.managedbuild.config.gnu.cross.exe.debug.660732730/CPATH/operation=remove
 environment/buildEnvironmentInclude/cdt.managedbuild.config.gnu.cross.exe.debug.660732730/CPLUS_INCLUDE_PATH/delimiter=;
@@ -15,6 +23,14 @@ environment/buildEnvironmentInclude/cdt.managedbuild.config.gnu.cross.exe.releas
 environment/buildEnvironmentInclude/cdt.managedbuild.config.gnu.cross.exe.release.887685357.1764349604/C_INCLUDE_PATH/operation=remove
 environment/buildEnvironmentInclude/cdt.managedbuild.config.gnu.cross.exe.release.887685357.1764349604/append=true
 environment/buildEnvironmentInclude/cdt.managedbuild.config.gnu.cross.exe.release.887685357.1764349604/appendContributed=true
+environment/buildEnvironmentInclude/cdt.managedbuild.config.gnu.cross.exe.release.887685357.949253841/CPATH/delimiter=;
+environment/buildEnvironmentInclude/cdt.managedbuild.config.gnu.cross.exe.release.887685357.949253841/CPATH/operation=remove
+environment/buildEnvironmentInclude/cdt.managedbuild.config.gnu.cross.exe.release.887685357.949253841/CPLUS_INCLUDE_PATH/delimiter=;
+environment/buildEnvironmentInclude/cdt.managedbuild.config.gnu.cross.exe.release.887685357.949253841/CPLUS_INCLUDE_PATH/operation=remove
+environment/buildEnvironmentInclude/cdt.managedbuild.config.gnu.cross.exe.release.887685357.949253841/C_INCLUDE_PATH/delimiter=;
+environment/buildEnvironmentInclude/cdt.managedbuild.config.gnu.cross.exe.release.887685357.949253841/C_INCLUDE_PATH/operation=remove
+environment/buildEnvironmentInclude/cdt.managedbuild.config.gnu.cross.exe.release.887685357.949253841/append=true
+environment/buildEnvironmentInclude/cdt.managedbuild.config.gnu.cross.exe.release.887685357.949253841/appendContributed=true
 environment/buildEnvironmentInclude/cdt.managedbuild.config.gnu.cross.exe.release.887685357/CPATH/delimiter=;
 environment/buildEnvironmentInclude/cdt.managedbuild.config.gnu.cross.exe.release.887685357/CPATH/operation=remove
 environment/buildEnvironmentInclude/cdt.managedbuild.config.gnu.cross.exe.release.887685357/CPLUS_INCLUDE_PATH/delimiter=;

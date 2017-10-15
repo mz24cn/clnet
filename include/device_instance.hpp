@@ -16,14 +16,6 @@
 #include <condition_variable>
 #include <sstream>
 
-#if CL_HPP_TARGET_OPENCL_VERSION < 200
-#define __CL_ENABLE_EXCEPTIONS
-#include <CL/cl.hpp>
-#else
-#define CL_HPP_ENABLE_EXCEPTIONS
-#include <cl2.hpp>
-#endif
-
 #define USER_ERROR_DESCRIPTION_UNDEFINED -28
 #define USER_GROUP_SIZE_NOT_BIG_ENOUGH -29
 #define MIN_ERROR_CODE -70
@@ -31,6 +23,7 @@
 
 namespace clnet {
 extern const char* clErrorCodeDescriptions[];
+extern std::string cl_build_options;
 struct Tensor;
 
 struct DeviceInstance {
@@ -119,6 +112,7 @@ void reload_kernels(const cl::Device& device, const cl::Context& context, Device
 std::string generate_kernel_sources(DeviceInstance& I, const cl::Device& device, std::unordered_map<Tensor*, std::string>& tensor_kernels);
 cl::Kernel& prepare_for_running_kernel(Tensor* tensor, DeviceInstance& I);
 void wait_for_all_kernels_finished(DeviceInstance& I);
+int find_proper_local_size(int required, int work_group_size);
 
 void CL_CALLBACK gradients_event_callback(cl_event, cl_int, void * user_data);
 void CL_CALLBACK parameters_event_callback(cl_event, cl_int, void * user_data);

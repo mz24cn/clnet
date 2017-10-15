@@ -27,12 +27,15 @@
 #include <array>
 #include <omp.h>
 
+#if defined(__GNUC__) && __GNUC__ >= 6
+#pragma GCC diagnostic ignored "-Wignored-attributes"
+#endif
 #if CL_HPP_TARGET_OPENCL_VERSION < 200
 #define __CL_ENABLE_EXCEPTIONS
-#include <CL/cl.hpp>
+#include "cl.hpp"
 #else
 #define CL_HPP_ENABLE_EXCEPTIONS
-#include <cl2.hpp>
+#include "cl2.hpp"
 #endif
 
 #define MILLIS(time) (clock() - time) * 1000 / CLOCKS_PER_SEC
