@@ -326,7 +326,7 @@ void OpenCL_::print_device_info(ostream& out)
 		if (platform_id != current) {
 			current = platform_id;
 			cl::Platform platform0(current);
-			out << "OpenCL Platforms: " << platform0.getInfo<CL_PLATFORM_NAME>() << "\n";
+			out << "OpenCL Platform:  " << platform0.getInfo<CL_PLATFORM_NAME>() << "\n";
 			out << "Version:          " << platform0.getInfo<CL_PLATFORM_VERSION>() << "\n";
 			out << "Vendor:           " << platform0.getInfo<CL_PLATFORM_VENDOR>() << "\n";
 			out << "Profile:          " << platform0.getInfo<CL_PLATFORM_PROFILE>() << "\n";

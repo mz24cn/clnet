@@ -90,7 +90,7 @@ int main(int argc, char** argv)
 		string param(argv[i]);
 		if (param.empty())
 			return 1;
-		else if (param[0] == ':')
+		else if (param[0] == ':' && i + 1 < argc)
 			key_values[param.substr(1)] = argv[++i];
 		else if (param == "/p")
 			CLNET_TENSOR_GLOBALS |= CLNET_PREDICT_ONLY;
