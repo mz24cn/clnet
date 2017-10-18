@@ -5,22 +5,40 @@ VisualStudioVersion = 14.0.25420.1
 MinimumVisualStudioVersion = 10.0.40219.1
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "OpenCLNet", "OpenCLNet.vcxproj", "{9FE48831-18B1-4E5A-B1C8-89B240647D4C}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "StaticLibrary", "StaticLibrary\StaticLibrary.vcxproj", "{34FABD08-0664-4FA0-A8BB-65618E022A09}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|ARM = Debug|ARM
 		Debug|x64 = Debug|x64
 		Debug|x86 = Debug|x86
+		Release|ARM = Release|ARM
 		Release|x64 = Release|x64
 		Release|x86 = Release|x86
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{9FE48831-18B1-4E5A-B1C8-89B240647D4C}.Debug|ARM.ActiveCfg = Debug|Win32
 		{9FE48831-18B1-4E5A-B1C8-89B240647D4C}.Debug|x64.ActiveCfg = Debug|x64
 		{9FE48831-18B1-4E5A-B1C8-89B240647D4C}.Debug|x64.Build.0 = Debug|x64
 		{9FE48831-18B1-4E5A-B1C8-89B240647D4C}.Debug|x86.ActiveCfg = Debug|Win32
 		{9FE48831-18B1-4E5A-B1C8-89B240647D4C}.Debug|x86.Build.0 = Debug|Win32
+		{9FE48831-18B1-4E5A-B1C8-89B240647D4C}.Release|ARM.ActiveCfg = Release|Win32
 		{9FE48831-18B1-4E5A-B1C8-89B240647D4C}.Release|x64.ActiveCfg = Release|x64
 		{9FE48831-18B1-4E5A-B1C8-89B240647D4C}.Release|x64.Build.0 = Release|x64
 		{9FE48831-18B1-4E5A-B1C8-89B240647D4C}.Release|x86.ActiveCfg = Release|Win32
 		{9FE48831-18B1-4E5A-B1C8-89B240647D4C}.Release|x86.Build.0 = Release|Win32
+		{34FABD08-0664-4FA0-A8BB-65618E022A09}.Debug|ARM.ActiveCfg = Debug|ARM
+		{34FABD08-0664-4FA0-A8BB-65618E022A09}.Debug|ARM.Build.0 = Debug|ARM
+		{34FABD08-0664-4FA0-A8BB-65618E022A09}.Debug|x64.ActiveCfg = Debug|x64
+		{34FABD08-0664-4FA0-A8BB-65618E022A09}.Debug|x64.Build.0 = Debug|x64
+		{34FABD08-0664-4FA0-A8BB-65618E022A09}.Debug|x86.ActiveCfg = Debug|Win32
+		{34FABD08-0664-4FA0-A8BB-65618E022A09}.Debug|x86.Build.0 = Debug|Win32
+		{34FABD08-0664-4FA0-A8BB-65618E022A09}.Release|ARM.ActiveCfg = Release|ARM
+		{34FABD08-0664-4FA0-A8BB-65618E022A09}.Release|ARM.Build.0 = Release|ARM
+		{34FABD08-0664-4FA0-A8BB-65618E022A09}.Release|x64.ActiveCfg = Release|x64
+		{34FABD08-0664-4FA0-A8BB-65618E022A09}.Release|x64.Build.0 = Release|x64
+		{34FABD08-0664-4FA0-A8BB-65618E022A09}.Release|x86.ActiveCfg = Release|Win32
+		{34FABD08-0664-4FA0-A8BB-65618E022A09}.Release|x86.Build.0 = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

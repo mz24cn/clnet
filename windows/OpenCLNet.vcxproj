@@ -75,7 +75,7 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
     <LinkIncremental>true</LinkIncremental>
     <IncludePath>$(ProjectDir)..\include;$(ProjectDir)..\providers\AMD\include;$(IncludePath)</IncludePath>
-    <LibraryPath>$(ProjectDir)..\providers\AMD\lib;$(LibraryPath)</LibraryPath>
+    <LibraryPath>$(ProjectDir)..\providers\AMD\lib64;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <LinkIncremental>false</LinkIncremental>
@@ -83,7 +83,7 @@
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
     <LinkIncremental>false</LinkIncremental>
     <IncludePath>$(ProjectDir)..\include;$(ProjectDir)..\providers\AMD\include;$(IncludePath)</IncludePath>
-    <LibraryPath>$(ProjectDir)..\providers\AMD\lib;$(LibraryPath)</LibraryPath>
+    <LibraryPath>$(ProjectDir)..\providers\AMD\lib64;$(LibraryPath)</LibraryPath>
   </PropertyGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">
     <ClCompile>
@@ -152,6 +152,7 @@
   <ItemGroup>
     <ClCompile Include="..\examples\character_RNN.cpp" />
     <ClCompile Include="..\examples\image_io.cpp" />
+    <ClCompile Include="..\examples\kernel_test.cpp" />
     <ClCompile Include="..\examples\main.cpp" />
     <ClCompile Include="..\examples\MNIST_CNN.cpp" />
     <ClCompile Include="..\examples\multi_layer_perception.cpp" />
@@ -162,6 +163,7 @@
     <ClCompile Include="..\src\tensor.cpp" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="..\include\cl.hpp" />
     <ClInclude Include="..\include\cl2.hpp" />
     <ClInclude Include="..\include\device_instance.hpp" />
     <ClInclude Include="..\include\tensor.hpp" />

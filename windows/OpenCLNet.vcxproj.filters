@@ -45,6 +45,9 @@
     <ClCompile Include="..\examples\MNIST_CNN.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
+    <ClCompile Include="..\examples\kernel_test.cpp">
+      <Filter>源文件</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="..\include\cl2.hpp">
@@ -54,6 +57,9 @@
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="..\include\tensor.hpp">
+      <Filter>头文件</Filter>
+    </ClInclude>
+    <ClInclude Include="..\include\cl.hpp">
       <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>
