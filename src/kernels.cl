@@ -92,12 +92,13 @@ kernel void feed_forward_fully_connected_sigmoid(global float* out, const global
 	const int n = GID / dim_hidden;
 	const int hidden = GID % dim_hidden;
 	const int weight_offset = hidden * dim_in;
+	
 	const int in_offset = n * dim_in;
 	float z = bias != NULL? bias[hidden] : 0;
 
 #pragma unroll
 	for (int i = 0; i < dim_in; i++)
-		z += weight[weight_offset + i] * in[in_offset + i];
+		z += weight[dim_hidden * i + hidden] * in[in_offset + i];
 	out[GID] = sigmoid(z);
 }
 
