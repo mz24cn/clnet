@@ -85,7 +85,7 @@ void save_tensor(Tensor* tensor, ostream& os, DeviceInstance& I)
 	os << '\n';
 }
 
-void save_tensor_as_csv(Tensor* tensor, const string& file, DeviceInstance& I, bool use_header)
+void save_tensor_as_csv(Tensor* tensor, const string& file, DeviceInstance* I, bool use_header)
 {
 	ofstream ofs(file);
 	if (!ofs)
@@ -99,8 +99,9 @@ void save_tensor_as_csv(Tensor* tensor, const string& file, DeviceInstance& I, b
 		ofs << '\n';
 	}
 
-	tensor->upload(I);
-	const float* pointer = I.pointers[tensor];
+	if (I != nullptr)
+		tensor->upload(*I);
+	const float* pointer = I == nullptr? tensor->pointer : I->pointers[tensor];
 	int columns = tensor->dimensions.back();
 	int rows = tensor->volume / columns;
 	for (int i = 0; i < rows; i++) {
@@ -142,7 +143,7 @@ vector<Tensor*> load_tensors(istream& is, DeviceInstance& I)
 	return tensors;
 }
 
-Tensor* load_tensor_from_csv(const string& file, DeviceInstance& I, Tensor* tensor)
+Tensor* load_tensor_from_csv(const string& file, Tensor* tensor, DeviceInstance* I)
 {
 	ifstream ifs(file);
 	if (!ifs)
@@ -176,7 +177,7 @@ Tensor* load_tensor_from_csv(const string& file, DeviceInstance& I, Tensor* tens
 
 	int columns = tensor->dimensions.back();
 	int rows = tensor->volume / columns;
-	float* pointer = I.pointers[tensor];
+	float* pointer = I == nullptr? tensor->pointer : I->pointers[tensor];
 	for (int i = 0; i < rows; i++) {
 		getline(ifs, line);
 		ss.str("");
@@ -185,7 +186,8 @@ Tensor* load_tensor_from_csv(const string& file, DeviceInstance& I, Tensor* tens
 		for (int j = 0; j < columns; j++)
 			ss >> *pointer++ >> comma;
 	}
-	tensor->download(I);
+	if (I != nullptr)
+		tensor->download(*I);
 	return tensor;
 }
 
@@ -607,7 +609,7 @@ void debugger_thread(DeviceInstance& I, Tensor& graph)
 					cin >> name;
 					for (size_t i = 0; i < tensors.size(); i++) {
 						string file = name + tensors[i]->alias + ".csv";
-						save_tensor_as_csv(tensors[i], file, I);
+						save_tensor_as_csv(tensors[i], file, &I);
 						if (i > 0)
 							tensor_names += ", ";
 						tensor_names += tensors[i]->alias;
@@ -644,7 +646,7 @@ void debugger_thread(DeviceInstance& I, Tensor& graph)
 					tensor_names.clear();
 					for (auto file : names) {
 						file = prefix + file + ".csv";
-						auto tensor = load_tensor_from_csv(file, I);
+						auto tensor = load_tensor_from_csv(file, nullptr, &I);
 						if (!tensor_names.empty())
 							tensor_names += ", ";
 						tensor_names += tensor->alias;

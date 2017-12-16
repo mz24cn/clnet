@@ -96,8 +96,8 @@ std::string type_name(Tensor* tensor);
 Tensor* locate_tensor(std::string name);
 void save_tensor(Tensor* tensor, std::ostream& os, DeviceInstance& I);
 std::vector<Tensor*> load_tensors(std::istream& is, DeviceInstance& I);
-void save_tensor_as_csv(Tensor* tensor, const std::string& file, DeviceInstance& I, bool use_header = true);
-Tensor* load_tensor_from_csv(const std::string& file, DeviceInstance& I, Tensor* tensor = nullptr);
+void save_tensor_as_csv(Tensor* tensor, const std::string& file, DeviceInstance* I = nullptr, bool use_header = true);
+Tensor* load_tensor_from_csv(const std::string& file, Tensor* tensor = nullptr, DeviceInstance* I = nullptr);
 void generate_all_gradients(Tensor* graph);
 
 #define CLNET_FEED_FORWARD_FUSION 1
