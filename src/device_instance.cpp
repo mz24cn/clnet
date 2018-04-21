@@ -423,9 +423,13 @@ void OpenCL_::run(Tensor& graph, vector<int> targetDeviceIDs, int debugger_devic
 			const auto& name = device.getInfo<CL_DEVICE_NAME>();
 
 			size_t time = MILLIS(0);
+			time_t seconds = time / 1000;
+			tm* current = localtime(&seconds);
+			char start_time[32];
+			sprintf(start_time, "%04d-%02d-%02d %02d:%02d:%02d", current->tm_year + 1900, current->tm_mon + 1, current->tm_mday, current->tm_hour, current->tm_min, current->tm_sec);
 			auto& I = DeviceInstance::create(device, device_id);
 			time = MILLIS(time);
-			logger << "[" << I.ID << "] " << name << " (kernels build: " << millis_string(time) << ")" << endl;
+			logger << "[" << I.ID << ",@"<< start_time << "] " << name << " (kernels build: " << millis_string(time) << ")" << endl;
 			if (debugger_device_id == device_id)
 				launch_debugger_thread(I, graph);
 			if (updater != nullptr) {
