@@ -326,17 +326,17 @@ void OpenCL_::print_device_info(ostream& out)
 		if (platform_id != current) {
 			current = platform_id;
 			cl::Platform platform0(current);
-			out << "OpenCL Platform:  " << platform0.getInfo<CL_PLATFORM_NAME>() << "\n";
-			out << "Version:          " << platform0.getInfo<CL_PLATFORM_VERSION>() << "\n";
-			out << "Vendor:           " << platform0.getInfo<CL_PLATFORM_VENDOR>() << "\n";
-			out << "Profile:          " << platform0.getInfo<CL_PLATFORM_PROFILE>() << "\n";
+			out << "OpenCL Platform:  " << platform0.getInfo<CL_PLATFORM_NAME>().c_str() << "\n";
+			out << "Version:          " << platform0.getInfo<CL_PLATFORM_VERSION>().c_str() << "\n";
+			out << "Vendor:           " << platform0.getInfo<CL_PLATFORM_VENDOR>().c_str() << "\n";
+			out << "Profile:          " << platform0.getInfo<CL_PLATFORM_PROFILE>().c_str() << "\n";
 			out << "Platform Devices: " << "\n";
 		}
 		string name = device.getInfo<CL_DEVICE_NAME>();
 		auto deviceType = device.getInfo<CL_DEVICE_TYPE>();
 		auto sizesItem = device.getInfo<CL_DEVICE_MAX_WORK_ITEM_SIZES>();
 
-		out << "\tDevice Name:         " << name << "\n";
+		out << "\tDevice Name:         " << name.c_str() << "\n";
 		out << "\tclNET device ID:     " << n << "\n";
 		out << "\tType:                ";
 		switch (deviceType) {
@@ -344,7 +344,7 @@ void OpenCL_::print_device_info(ostream& out)
 		case CL_DEVICE_TYPE_GPU: out << "GPU"; break;
 		default: out << "OTHER"; break;
 		}
-		out << "\n\tVersion:             " << device.getInfo<CL_DEVICE_VERSION>() << '/' << device.getInfo<CL_DRIVER_VERSION>() << "\n";
+		out << "\n\tVersion:             " << device.getInfo<CL_DEVICE_VERSION>().c_str() << '/' << device.getInfo<CL_DRIVER_VERSION>().c_str() << "\n";
 		out << "\tGlobal/Local Memory: " << device.getInfo<CL_DEVICE_GLOBAL_MEM_SIZE>() << '/' << device.getInfo<CL_DEVICE_LOCAL_MEM_SIZE>() << " bytes\n";
 		out << "\tMax ComputeUnits:    " << device.getInfo<CL_DEVICE_MAX_COMPUTE_UNITS>() << "\n";
 		out << "\tMax WorkItem Sizes:  [" << sizesItem[0];
@@ -353,11 +353,11 @@ void OpenCL_::print_device_info(ostream& out)
 		out << "]\n";
 		out << "\tBuiltIn Kernels:     ";
 		try {
-			out << device.getInfo<CL_DEVICE_BUILT_IN_KERNELS>();
+			out << device.getInfo<CL_DEVICE_BUILT_IN_KERNELS>().c_str();
 		} catch (cl::Error& e) {
 			out << "Error in " << e.what() << " (" << e.err() << "): " << clErrorCodeDescriptions[-e.err()] << "\n";
 		}
-		out << "\n\tExtensions:          " << device.getInfo<CL_DEVICE_EXTENSIONS>();
+		out << "\n\tExtensions:          " << device.getInfo<CL_DEVICE_EXTENSIONS>().c_str();
 		out << "\n" << endl;
 	}
 }
@@ -411,7 +411,7 @@ void OpenCL_::run(Tensor& graph, vector<int> targetDeviceIDs, int debugger_devic
 		size_t time = MILLIS(0);
 		auto& I = DeviceInstance::create(device, -1);
 		time = MILLIS(time);
-		logger << "[master] runs on " << name << " (" << master_device_id << ") (kernels build: " << millis_string(time) << ")" << endl;
+		logger << "[master] runs on " << name.c_str() << " (" << master_device_id << ") (kernels build: " << millis_string(time) << ")" << endl;
 		global_updater = new thread(&Updater::global_updater_thread, updater, ref(I));
 	}
 
@@ -429,7 +429,7 @@ void OpenCL_::run(Tensor& graph, vector<int> targetDeviceIDs, int debugger_devic
 			sprintf(start_time, "%04d-%02d-%02d %02d:%02d:%02d", current->tm_year + 1900, current->tm_mon + 1, current->tm_mday, current->tm_hour, current->tm_min, current->tm_sec);
 			auto& I = DeviceInstance::create(device, device_id);
 			time = MILLIS(time);
-			logger << "[" << I.ID << ",@"<< start_time << "] " << name << " (kernels build: " << millis_string(time) << ")" << endl;
+			logger << "[" << I.ID << ",@"<< start_time << "] " << name.c_str() << " (kernels build: " << millis_string(time) << ")" << endl;
 			if (debugger_device_id == device_id)
 				launch_debugger_thread(I, graph);
 			if (updater != nullptr) {
