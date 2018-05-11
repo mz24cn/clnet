@@ -129,7 +129,7 @@ void Tensor::initialize(DeviceInstance* I) //this should be idempotent
 	}
 }
 
-type::MiniBatch::MiniBatch(int size, int total) : batch_size(size)
+type::MiniBatch::MiniBatch(int size, int total, bool shuffle) : batch_size(size), use_shuffle(shuffle)
 {
 	set_total_samples(total);
 }
@@ -163,7 +163,8 @@ void type::MiniBatch::reset(DeviceInstance& I)
 {
 	int* p = reinterpret_cast<int*>(I.pointers[this]);
 	*p++ = -1;
-	random_shuffle(p, p + total_batches * batch_size);
+	if (use_shuffle)
+		random_shuffle(p, p + total_batches * batch_size);
 }
 
 void type::Reshape::initialize(DeviceInstance* I)

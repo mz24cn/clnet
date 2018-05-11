@@ -120,8 +120,9 @@ struct Structured {
 
 struct MiniBatch : Tensor {
 	int batch_size, total_batches;
+	bool use_shuffle;
 
-	MiniBatch(int batch_size, int total_samples = 0);
+	MiniBatch(int batch_size, int total_samples = 0, bool use_shuffle = true);
 	void set_total_samples(int N);
 	virtual void initialize(DeviceInstance* I) override;
 	virtual bool has_next(DeviceInstance& I);
