@@ -121,10 +121,11 @@ void Tensor::initialize(DeviceInstance* I) //this should be idempotent
 		allocate_mutex.unlock();
 
 		if (I != nullptr && I->pointers.count(this) == 0) { //idempotent
-			const auto& context = I->queue.getInfo<CL_QUEUE_CONTEXT>();
-			I->buffers[this] = cl::Buffer(context, CL_MEM_READ_WRITE|CL_MEM_COPY_HOST_PTR|CL_MEM_ALLOC_HOST_PTR, size, pointer); //initialize from tensor itself
 			I->pointers[this] = new float[volume];
 			memcpy(I->pointers[this], pointer, size); //initialized by tensor's pointer
+			const auto& context = I->queue.getInfo<CL_QUEUE_CONTEXT>();
+			I->buffers[this] = cl::Buffer(context, CL_MEM_READ_WRITE, size);
+			download(*I); //initialize from tensor itself
 		}
 	}
 }
