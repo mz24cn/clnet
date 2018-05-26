@@ -94,8 +94,8 @@ Tensor& Reshape(Tensor& input, std::vector<int64> target_shape, std::string name
 
 std::string type_name(Tensor* tensor);
 Tensor* locate_tensor(std::string name);
-void save_tensor(Tensor* tensor, std::ostream& os, DeviceInstance& I);
-std::vector<Tensor*> load_tensors(std::istream& is, DeviceInstance& I);
+void save_tensor(Tensor* tensor, std::ostream& os, DeviceInstance* I = nullptr);
+std::vector<Tensor*> load_tensors(std::istream& is, DeviceInstance* I = nullptr);
 void save_tensor_as_csv(Tensor* tensor, const std::string& file, DeviceInstance* I = nullptr, bool use_header = true);
 Tensor* load_tensor_from_csv(const std::string& file, Tensor* tensor = nullptr, DeviceInstance* I = nullptr);
 void generate_all_gradients(Tensor* graph);

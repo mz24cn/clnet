@@ -71,7 +71,7 @@ string type_name(Tensor* tensor)
 	return name;
 }
 
-void save_tensor(Tensor* tensor, ostream& os, DeviceInstance& I)
+void save_tensor(Tensor* tensor, ostream& os, DeviceInstance* I)
 {
 	os << tensor->alias << '\n';
 	os << type_name(tensor) << '\n';
@@ -80,8 +80,12 @@ void save_tensor(Tensor* tensor, ostream& os, DeviceInstance& I)
 	for (auto dim : tensor->dimensions)
 		os << dim << ' ';
 	os << tensor->size << '\n';
-	tensor->upload(I);
-	os.write(reinterpret_cast<char*>(I.pointers[tensor]), tensor->size);
+	if (I != nullptr) {
+		tensor->upload(*I);
+		os.write(reinterpret_cast<char*>(I->pointers[tensor]), tensor->size);
+	}
+	else
+		os.write(reinterpret_cast<char*>(tensor->pointer), tensor->size);
 	os << '\n';
 }
 
@@ -112,7 +116,7 @@ void save_tensor_as_csv(Tensor* tensor, const string& file, DeviceInstance* I, b
 	ofs.close();
 }
 
-vector<Tensor*> load_tensors(istream& is, DeviceInstance& I)
+vector<Tensor*> load_tensors(istream& is, DeviceInstance* I)
 {
 	string typeName, name;
 	vector<Tensor*> tensors;
@@ -133,9 +137,13 @@ vector<Tensor*> load_tensors(istream& is, DeviceInstance& I)
 				tensor->dimensions.push_back(V);
 		}
 		is >> size >> noskipws >> separator; //tensor->size
-		tensor->initialize(&I);
-		is.read(reinterpret_cast<char*>(I.pointers[tensor]), tensor->size);
-		tensor->download(I);
+		tensor->initialize(I);
+		if (I != nullptr) {
+			is.read(reinterpret_cast<char*>(I->pointers[tensor]), tensor->size);
+			tensor->download(*I);
+		}
+		else
+			is.read(reinterpret_cast<char*>(tensor->pointer), tensor->size);
 		is >> separator;
 		is >> skipws;
 		tensors.push_back(tensor);
@@ -618,7 +626,7 @@ void debugger_thread(DeviceInstance& I, Tensor& graph)
 				else {
 					ofstream ofs(name, ostream::binary);
 					for (size_t i = 0; i < tensors.size(); i++) {
-						save_tensor(tensors[i], ofs, I);
+						save_tensor(tensors[i], ofs, &I);
 						if (i > 0)
 							tensor_names += ", ";
 						tensor_names += tensors[i]->alias;
@@ -654,7 +662,7 @@ void debugger_thread(DeviceInstance& I, Tensor& graph)
 				}
 				else {
 					ifstream ifs(name, istream::binary);
-					vector<Tensor*> tensors = load_tensors(ifs, I);
+					vector<Tensor*> tensors = load_tensors(ifs, &I);
 					ifs.close();
 					for (size_t i = 0; i < tensors.size(); i++) {
 						if (i > 0)

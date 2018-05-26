@@ -144,7 +144,7 @@ Tensor* predict_charRNN(Tensor& graph, Tensor* lstm_initialzier, CharacterIndexe
 		ifstream ifs(params_file, istream::binary);
 		if (!ifs)
 			throw runtime_error("failed to open " + params_file);
-		auto tensors = load_tensors(ifs, I);
+		auto tensors = load_tensors(ifs, &I);
 		ifs.close();
 		logger << to_string(tensors.size()) << " parameters successfully loaded." << endl;
 	});

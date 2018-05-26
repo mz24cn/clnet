@@ -156,7 +156,7 @@ T MNIST_CNN(bool is_predict)
 
 		ofstream ofs(clnetparams_file, ostream::binary);
 		for (size_t i = 0; i < parameters.size(); i++)
-			save_tensor(parameters[i], ofs, I);
+			save_tensor(parameters[i], ofs, &I);
 		ofs.close();
 	});
 	auto validator = new InstantTensor("MNIST_CNN_validator", {}, [iterator, class_num, &inference, &label](InstantTensor* self, DeviceInstance& I) {
