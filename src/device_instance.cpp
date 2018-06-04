@@ -135,10 +135,10 @@ type::MiniBatch::MiniBatch(int size, int total, bool shuffle) : batch_size(size)
 	set_total_samples(total);
 }
 
-void type::MiniBatch::set_total_samples(int N)
+void type::MiniBatch::set_total_samples(int64 N)
 {
 	shape_with({ N + 1 });
-	total_batches = N / batch_size;
+	total_batches = int(N / batch_size);
 	if (N % batch_size != 0 && (CLNET_TENSOR_GLOBALS & CLNET_VALUE_MISMATCH_WARN))
 		logger << (N % batch_size) << " samples at tail were abandoned." << endl;
 }

@@ -123,7 +123,7 @@ struct MiniBatch : Tensor {
 	bool use_shuffle;
 
 	MiniBatch(int batch_size, int total_samples = 0, bool use_shuffle = true);
-	void set_total_samples(int N);
+	void set_total_samples(int64 N);
 	virtual void initialize(DeviceInstance* I) override;
 	virtual bool has_next(DeviceInstance& I);
 	virtual void reset(DeviceInstance& I);
