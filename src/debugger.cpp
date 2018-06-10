@@ -390,7 +390,7 @@ template <typename T> void operate_tensor_data(Tensor* tensor, DeviceInstance& I
 	T* data;
 	float* tmp = I.pointers[tensor];
 	if (which == 0) {
-		data = new T[tensor->volume];
+		data = new T[tensor->size / sizeof(T)];
 		I.pointers[tensor] = reinterpret_cast<float*>(data);
 		tensor->upload(I);
 	}

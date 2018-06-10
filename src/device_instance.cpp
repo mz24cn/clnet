@@ -114,14 +114,14 @@ void Tensor::initialize(DeviceInstance* I) //this should be idempotent
 	else {
 		allocate_mutex.lock();
 		if (pointer == nullptr) { //idempotent
-			pointer = new float[volume];
 			size = volume * sizeof(float);
+			pointer = new float[volume];
 			memset(pointer, 0, size); //Every byte of initialized Tensor is starting from zero
 		}
 		allocate_mutex.unlock();
 
 		if (I != nullptr && I->pointers.count(this) == 0) { //idempotent
-			I->pointers[this] = new float[volume];
+			I->pointers[this] = new float[size / sizeof(float)]; // only rely on size, not on volume/dimensions
 			memcpy(I->pointers[this], pointer, size); //initialized by tensor's pointer
 			const auto& context = I->queue.getInfo<CL_QUEUE_CONTEXT>();
 			I->buffers[this] = cl::Buffer(context, CL_MEM_READ_WRITE, size);
