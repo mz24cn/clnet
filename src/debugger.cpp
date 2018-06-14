@@ -751,6 +751,24 @@ void debugger_thread(DeviceInstance& I, Tensor& graph)
 							}
 							continue;
 						}
+						else if (attrib == "weight_decay") {
+							auto tensor = dynamic_cast<type::StochasticGradientDescentUpdater*>(last);
+							float& target = tensor->weight_decay;
+							if (tensor == nullptr)
+								throw runtime_error(last->alias + " is not type of type::StochasticGradientDescentUpdater.");
+							logger << "[debugger] " << last->alias << ".weight_decay = " << target << endl;
+							char c= cin.peek();
+							if (c != '\n') {
+								cin >> name;
+								float value;
+								cin >> value;
+								unitary_operation<float>(name, value)(target);
+								logger << "[debugger] " << last->alias << ".weight_decay " << name << " " << value << endl;
+								if (name != "=")
+									logger << "[debugger] " << last->alias << ".weight_decay = " << target << endl;
+							}
+							continue;
+						}
 						else if (attrib == "max_epochs") {
 							auto tensor = dynamic_cast<type::IterativeOptimizer*>(last);
 							int64& target = reinterpret_cast<int64&>(tensor->max_epochs);
