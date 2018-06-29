@@ -593,8 +593,11 @@ void debugger_thread(DeviceInstance& I, Tensor& graph)
 								tensors.push_back(iter.first);
 						auto compare = [](Tensor* a, Tensor* b) -> bool { return kernels_cost[a] > kernels_cost[b]; };
 						sort(tensors.begin(), tensors.end(), compare);
+						size_t total = 0;
 						for (auto tensor : tensors)
-							logger << tensor->alias << ": " << type_name(tensor) << ": \t\t" << millis_string(kernels_cost[tensor] / 1000) << endl;
+							total += kernels_cost[tensor];
+						for (auto tensor : tensors)
+							logger << tensor->alias << ": " << type_name(tensor) << ": \t\t" << millis_string(kernels_cost[tensor] / 1000) << "/" << int(100.0f * kernels_cost[tensor] / total) << "%" << endl;
 					}
 				}
 			}

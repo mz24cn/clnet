@@ -118,11 +118,11 @@ T MNIST_CNN(bool is_predict)
 	T pool1 = Pooling(conv1, {2}, {}, pooling_type, true, "pool1");
 	T conv2 = ConvolutionKernel(pool1, filters2, kernel_size, stride, activation, true, "conv2");
 	T pool2 = Pooling(conv2, {2}, {}, pooling_type, true, "pool2");
-	T conv3 = ConvolutionKernel(pool2, filters3, kernel_size, stride, activation, true, "conv3");
-	T pool3 = Pooling(conv3, {2}, {}, pooling_type, true, "pool3");
-	T reshape = Reshape(pool3, {pool3.dimensions[0], pool3.volume / pool3.dimensions[0]});
+//	T conv3 = ConvolutionKernel(pool2, filters3, 2, stride, activation, true, "conv3");
+//	T pool3 = Pooling(conv3, {2}, {}, pooling_type, true, "pool3");
+//	T reshape = Reshape(pool3, {pool3.dimensions[0], pool3.volume / pool3.dimensions[0]});
 
-//	T reshape = Reshape(pool1, {pool1.dimensions[0], pool1.volume / pool1.dimensions[0]});
+	T reshape = Reshape(pool2, {pool2.dimensions[0], pool2.volume / pool2.dimensions[0]});
 //	T reshape = Reshape(data, {data.dimensions[0], data.volume / data.dimensions[0]});
 	T feature = FullyConnectedLayer(reshape, filters3, activation, "feature");
 	T inference = FullyConnectedLayer(feature, class_num, "", "inference");

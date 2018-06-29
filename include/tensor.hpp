@@ -51,6 +51,7 @@ struct Tensor {
 	Tensor& operator * (Tensor& other);
 	Tensor& operator + (Tensor& other);
 	Tensor& operator += (Tensor& other);
+	Tensor& operator = (Tensor& other);
 	Tensor& transpose();
 
 	void dependent_on(Tensor* precusor);
@@ -320,25 +321,9 @@ struct Loss : Tensor {
 	virtual void run(DeviceInstance& I) override;
 };
 
-struct kernel_gradient_loss_fully_connected : Tensor {
-	std::string loss, activation;
-
-	kernel_gradient_loss_fully_connected(Tensor& weight_grad, Tensor& bias_grad, Tensor& in, Tensor& out, Tensor& label, std::string loss, std::string activation, std::string name = "kernel_gradient_loss_fully_connected");
-	virtual std::string generate_source_code(DeviceInstance& I) override;
-	virtual void run(DeviceInstance& I) override;
-};
-
 struct BinaryOperator : Tensor {
 	std::string function;
 
-	virtual std::string generate_source_code(DeviceInstance& I) override;
-	virtual void run(DeviceInstance& I) override;
-};
-
-struct kernel_gradient_cascade_fully_connected : Tensor {
-	std::string activation;
-
-	kernel_gradient_cascade_fully_connected(Tensor& weight_grad, Tensor& bias_grad, Tensor& in, Tensor& out, Tensor& weight_next, Tensor& nabla_next, std::string activation, std::string name = "kernel_gradient_cascade_fully_connected");
 	virtual std::string generate_source_code(DeviceInstance& I) override;
 	virtual void run(DeviceInstance& I) override;
 };

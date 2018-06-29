@@ -18,7 +18,7 @@ using namespace clnet;
 
 T MLP()
 {
-	const int K = 2, N = 128, HIDDEN = 4096, max_iters = optional<int>("max_iters", 10001), display_batches = optional<int>("display_batches", 2000);
+	const int K = optional<int>("K", 2), N = optional<int>("N", 128), HIDDEN = optional<int>("HIDDEN", 4096), max_iters = optional<int>("max_iters", 10001), display_batches = optional<int>("display_batches", 2000);
 	float learning_rate = optional<float>("learning_rate", 0.00001);
 	auto generator = new InstantTensor("data_generator", {}, {}, [](InstantTensor* self, DeviceInstance& I) {
 		float *x = I.pointers[self->peers[0]], *y = I.pointers[self->peers[1]]; //peers[2]: MiniBatch
@@ -36,15 +36,15 @@ T MLP()
 	T X = Data({N, K}, generator, "X");
 	T Y = Data({N}, generator, "Y");
 
-	T l0_weight = Weight({HIDDEN, K}, "l0_weight");
+	T l0_weight = Weight({K, HIDDEN}, "l0_weight");
 	T l0_bias = Bias({HIDDEN}, "l0_bias");
-	T l1_weight = Weight({1, HIDDEN}, "l1_weight");
+	T l1_weight = Weight({HIDDEN, 1}, "l1_weight");
 	T l1_bias = Bias({1}, "l1_bias");
 
 //	T layer0 = sigmoid(l0_weight * X + l0_bias);
 //	T layer1 = softrelu(l1_weight * l0_output + l1_bias);
-	T l0_output = FullyConnectedLayer(X, l0_weight, &l0_bias, "sigmoid", "FCLayer_0");
-	T l1_output = FullyConnectedLayer(l0_output, l1_weight, &l1_bias, "softrelu", "FCLayer_1");
+	T l0_output = FullyConnectedLayer(X, l0_weight, &l0_bias, optional<string>("activation1", "sigmoid"), "FCLayer_0");
+	T l1_output = FullyConnectedLayer(l0_output, l1_weight, &l1_bias, optional<string>("activation2", "softrelu"), "FCLayer_1");
 	T loss = LinearRegressionLoss(l1_output, Y);
 	T SGD = StochasticGradientDescentUpdater(loss, learning_rate, 0);
 
@@ -56,9 +56,10 @@ T MLP()
 			return;
 
 		size_t duration = optimizer->milliseconds_since_last(I);
-		int n = self->peers[0]->peers[0]->dimensions[0] * 2000;
+		auto loss = static_cast<back::Loss*>(self->peers[0]);
+		int n = loss->peers[0]->dimensions[0] * 2000;
 		string speed = epoch == 0? to_string(duration) + "ms" : to_string(int(1000.0f * n / duration)) + "/s";
-		logger << "[" << I.ID << "," << epoch << "," << speed << "] error rate: " << static_cast<back::Loss*>(self->peers[0])->L(I)  << endl;
+		logger << "[" << I.ID << "," << epoch << "," << speed << "] error rate: " << loss->L(I)  << endl;
 	});
 	return IterativeOptimizer({&initializer}, {&SGD, generator, monitor}, max_iters);
 }
@@ -90,7 +91,7 @@ T MLP_softmax()
 
 	for (int i = 0; i < nLayers; i++) {
 		string istr = to_string(i);
-		params[i] = &Weight({layerSizes[i], i == 0? P : params[i - 1]->dimensions[0]}, string("w") + istr);
+		params[i] = &Weight({i == 0? P : params[i - 1]->dimensions[0], layerSizes[i]}, string("w") + istr);
 		params[i + nLayers] = &Bias({layerSizes[i]}, string("b") + istr);
 		outputs[i] = &FullyConnectedLayer(i == 0? sym_x : *outputs[i-1], *params[i], params[i + nLayers], "leakyrelu", string("leaky_fc") + istr);
 	}

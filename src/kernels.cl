@@ -91,13 +91,12 @@ kernel void feed_forward_fully_connected_sigmoid(global float* out, const global
 	const int GID = get_global_id(0);
 	const int n = GID / dim_hidden;
 	const int hidden = GID % dim_hidden;
-	const int weight_offset = hidden * dim_in;
 	const int in_offset = n * dim_in;
 	float z = bias != NULL? bias[hidden] : 0;
 
 #pragma unroll
 	for (int i = 0; i < dim_in; i++)
-		z += weight[weight_offset + i] * in[in_offset + i];
+		z += weight[dim_hidden * i + hidden] * in[in_offset + i];
 	out[GID] = sigmoid(z);
 }
 
@@ -121,13 +120,13 @@ kernel void back_propagate_fully_connected_softrelu_gradient(global float* in_gr
 		}
 		if (k == 0 && bias_grad != NULL)
 			bias_grad[n] += sum_bias_grad;
-		weight_grad[n * dim_in + k] += sum_weight_grad;
+		weight_grad[k * dim_out + n] += sum_weight_grad;
 	}
 
 	if (in_grad != NULL && n < batch_size) {
 		float sum_in_grad = 0;
 		for (int j = 0; j < dim_out; j++) {
-			const float weight_j = weight[j * dim_in + k];
+			const float weight_j = weight[k * dim_out + j];
 			const float out_grad_j = softrelu_gradient(out[n * dim_out + j]) * out_grad[n * dim_out + j];
 			sum_in_grad += weight_j * out_grad_j;
 		}
@@ -136,6 +135,64 @@ kernel void back_propagate_fully_connected_softrelu_gradient(global float* in_gr
 		else
 			in_grad[n * dim_in + k] = sum_in_grad;
 	}
+}
+
+//Standard implementation
+//Parallel: weight_Out_dim
+kernel void back_propagate_fully_connected_softrelu_gradient_for_bias(global float* activation_grad, global float* bias_grad,
+		const global float* out, const global float* out_grad, const int dim_out, const int dim_in, const int batch_size)
+{
+	const int n = get_global_id(0);
+
+	float sum_bias_grad = 0;
+	for (int j = 0; j < batch_size; j++) {
+		const float out_grad_j = softrelu_gradient(out[j * dim_out + n]) * out_grad[j * dim_out + n];
+		activation_grad[j * dim_out + n] = out_grad_j; 
+		sum_bias_grad += out_grad_j;
+	}
+	if (bias_grad != NULL)
+		bias_grad[n] += sum_bias_grad;
+}
+
+//Standard implementation
+//Parallel: weight_Out_dim * weight_In_dim
+kernel void back_propagate_fully_connected_softrelu_gradient_for_weight(global float* weight_grad, const global float* activation_grad,
+		const global float* in, const int dim_out, const int dim_in, const int batch_size)
+{
+	const int n = get_global_id(0);
+	const int pos = get_global_id(1);
+	const int K = get_global_size(1);
+
+	for (int k = pos; k < dim_in; k += K) {
+		float sum_weight_grad = 0;
+		for (int j = 0; j < batch_size; j++) {
+			const float in_j = in[j * dim_in + k];
+			const float out_grad_j = activation_grad[j * dim_out + n];
+			sum_weight_grad += in_j * out_grad_j;
+		}
+		weight_grad[k * dim_out + n] += sum_weight_grad;
+	}
+}
+
+//Standard implementation
+//Parallel: batch_size x weight_In_dim
+kernel void back_propagate_fully_connected_softrelu_gradient_for_data(global float* in_grad, const global float* weight,
+		const global float* out, const global float* out_grad, const int dim_out, const int dim_in, const int batch_size, const int is_addon)
+{
+	const int GID = get_global_id(0);
+	const int k = GID % dim_in;
+	const int n = GID / dim_in;
+
+	float sum_in_grad = 0;
+	for (int j = 0; j < dim_out; j++) {
+		const float weight_j = weight[k * dim_out + j];
+		const float out_grad_j = softrelu_gradient(out[n * dim_out + j]) * out_grad[n * dim_out + j];
+		sum_in_grad += weight_j * out_grad_j;
+	}
+	if (is_addon)
+		in_grad[n * dim_in + k] += sum_in_grad;
+	else
+		in_grad[n * dim_in + k] = sum_in_grad;
 }
 
 //Parallel: (batch_size * dim_hidden * get_local_size(0))
@@ -149,7 +206,7 @@ kernel void feed_forward_fully_connected_softrelu(global float* out, const globa
 	const int parallel = get_local_size(0);
 	const int n = GID / parallel / dim_hidden;
 	const int hidden = (GID / parallel) % dim_hidden;
-	const int weight_offset = hidden * dim_in;
+//	const int weight_offset = hidden * dim_in;
 	const int in_offset = n * dim_in;
 	float z = bias != NULL? bias[hidden] : 0;
 
@@ -158,7 +215,7 @@ kernel void feed_forward_fully_connected_softrelu(global float* out, const globa
 	float sum = 0;
 // support any value for dim_in. Inefficient for dim_in < parallel / 2
 	for (int index = pos; index < dim_in; index += parallel)
-		sum += weight[weight_offset + index] * in[in_offset + index];
+		sum += weight[dim_hidden * index + hidden] * in[in_offset + index];
 
 	tmp[pos] = sum;
 	work_group_barrier(CLK_LOCAL_MEM_FENCE);
@@ -169,34 +226,6 @@ kernel void feed_forward_fully_connected_softrelu(global float* out, const globa
 	}
 	if (pos == 0)
 		out[GID / parallel] = softrelu(z + tmp[0]);
-}
-
-// fused version
-//Parallel: weight_Out_dim x weight_In_dim
-kernel void back_propagate_cascade_fully_connected_sigmoid_gradient(global float* weight_grad, global float* bias_grad, const global float* in,
-		const global float* out, const global float* weight_next, const global float* nabla_next/*bias_grad*/,
-		local float* tmp, const int dim_out, const int dim_in/*k*/, const int dim_weight_next_out, const int batch_size)
-{
-	const int GID = get_global_id(0);
-	const int j = GID / dim_in;
-	const int k = GID % dim_in;
-	float this_bias_grad = 0;
-	float this_weight_grad = 0;
-
-	for (int n = 0; n < batch_size; n++) {
-		float a_j = out[n * dim_out + j];
-
-		float sum = 0;
-		for (int i = 0; i < dim_weight_next_out; i++)
-			sum += weight_next[i * dim_in + j] * nabla_next[i];
-
-		float nabla = sum * sigmoid_gradient(a_j);
-		this_bias_grad += nabla;
-		this_weight_grad += in[n * dim_in + k] * nabla;
-	}
-	if (k == 0 && bias_grad != NULL)
-		bias_grad[j] += this_bias_grad;
-	weight_grad[GID] += this_weight_grad;
 }
 
 //Parallel: (batch_size * get_local_size(0))
@@ -240,85 +269,6 @@ kernel void linear_regression_loss(global float* out_grad, const global float* o
 {
 	const int GID = get_global_id(0);
 	out_grad[GID] = linear_regression_gradient(out[GID], label[GID]);
-}
-
-// fused version
-//Parallel: (weight_Out_dim * weight_In_dim * get_local_size(0))
-kernel void back_propagate_linear_regression_loss_softrelu_gradient(global float* weight_grad, global float* bias_grad, const global float* in,
-		const global float* out, const global float* label, local float* tmp/*size is 2 * get_local_size(0)*/,
-		const int dim_out/*num_hidden*/, const int dim_in/*k*/, const int batch_size)
-{
-	const int GID = get_global_id(0);
-	const int parallel = get_local_size(0);
-	const int j = GID / parallel / dim_in;
-	const int k = (GID / parallel) % dim_in;
-	const int pos = GID % parallel;
-
-	float nabla_sum = 0, weight_grad_sum = 0;
-	for (int n = pos; n < batch_size; n += parallel) {
-		const float a_j = out[n * dim_out + j];
-		float nabla = linear_regression_gradient(a_j, label[n * dim_out + j]) * softrelu_gradient(a_j);
-		nabla_sum += nabla;
-		weight_grad_sum += in[n * dim_in + k] * nabla;
-	}
-
-	local float* tmp_w = tmp + parallel;
-	tmp[pos] = nabla_sum;
-	tmp_w[pos] = weight_grad_sum;
-	work_group_barrier(CLK_LOCAL_MEM_FENCE);
-	for (int stride = parallel / 2; stride > 0; stride = stride / 2) {
-		if (pos < stride) {
-			tmp[pos] += tmp[pos + stride];
-			tmp_w[pos] += tmp_w[pos + stride];
-		}
-		work_group_barrier(CLK_LOCAL_MEM_FENCE);
-	}
-	if (pos == 0) {
-		if (k == 0 && bias_grad != NULL)
-			bias_grad[j] += tmp[0];
-		weight_grad[GID / parallel] += tmp_w[0];
-	}
-}
-
-// fused version for softmax TODO: compute out(j)=out(j)/sigma(out(i)) firstly
-//Parallel: (weight_Out_dim * weight_In_dim * get_local_size(0))
-kernel void back_propagate_negative_log_likelihood_loss_softrelu_gradient(global float* weight_grad, global float* bias_grad, const global float* in,
-		const global float* out, const global float* label, local float* tmp/*size is 2 * get_local_size(0)*/,
-		const int dim_out/*num_hidden*/, const int dim_in/*k*/, const int batch_size)
-{
-	const int GID = get_global_id(0);
-	const int parallel = get_local_size(0);
-	const int j = GID / parallel / dim_in;
-	const int k = (GID / parallel) % dim_in;
-	const int pos = GID % parallel;
-
-	float nabla_sum = 0, weight_grad_sum = 0;
-	for (int n = pos; n < batch_size; n += parallel) {
-		const float a_j = out[n * dim_out + j];
-		const int i = (int) label[n * dim_out + j];
-		const bool i_equal_j = i == j;
-
-		const float nabla = negative_log_likelihood_gradient(a_j, i_equal_j) * softrelu_gradient(a_j);
-		nabla_sum += nabla;
-		weight_grad_sum += in[n * dim_in + k] * nabla;
-	}
-
-	local float* tmp_w = tmp + parallel;
-	tmp[pos] = nabla_sum;
-	tmp_w[pos] = weight_grad_sum;
-	work_group_barrier(CLK_LOCAL_MEM_FENCE);
-	for (int stride = parallel / 2; stride > 0; stride = stride / 2) {
-		if (pos < stride) {
-			tmp[pos] += tmp[pos + stride];
-			tmp_w[pos] += tmp_w[pos + stride];
-		}
-		work_group_barrier(CLK_LOCAL_MEM_FENCE);
-	}
-	if (pos == 0) {
-		if (k == 0 && bias_grad != NULL)
-			bias_grad[j] += tmp[0];
-		weight_grad[GID / parallel] += tmp_w[0];
-	}
 }
 
 //Parallel: params->dims

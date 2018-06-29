@@ -63,8 +63,13 @@ void reload_kernels(const cl::Device& device, const cl::Context& context, Device
 
 	for (auto& iter : tensor_kernels) {
 		auto tensor = iter.first;
-		const char* name = iter.second.c_str();
-		I.kernels[tensor] = cl::Kernel(program, name);
+		stringstream ss;
+		ss << iter.second;
+		string kernel;
+		while (ss >> kernel) {
+			const char* name = kernel.c_str();
+			I.kernels[tensor].push_back(cl::Kernel(program, name));
+		}
 	}
 }
 

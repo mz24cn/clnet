@@ -39,7 +39,7 @@ struct DeviceInstance {
 	std::unordered_map<Tensor*, cl::Buffer> buffers;
 	std::unordered_map<Tensor*, cl::Event> events;
 	std::unordered_map<Tensor*, float*> pointers;
-	std::unordered_map<Tensor*, cl::Kernel> kernels;
+	std::unordered_map<Tensor*, std::vector<cl::Kernel>> kernels;
 
 	explicit DeviceInstance() : ID(-1), parameters_state(0), gradients_state(0), work_group_size(0) {}
 	void initialize();
@@ -110,7 +110,7 @@ extern OpenCL_ OpenCL;
 
 void reload_kernels(const cl::Device& device, const cl::Context& context, DeviceInstance& I);
 std::string generate_kernel_sources(DeviceInstance& I, const cl::Device& device, std::unordered_map<Tensor*, std::string>& tensor_kernels);
-cl::Kernel& prepare_for_running_kernel(Tensor* tensor, DeviceInstance& I);
+cl::Kernel& prepare_for_running_kernel(Tensor* tensor, DeviceInstance& I, int number = 0);
 void wait_for_all_kernels_finished(DeviceInstance& I);
 int find_proper_local_size(int required, int work_group_size);
 

@@ -329,6 +329,18 @@ Tensor& Tensor::operator += (Tensor& other)
 	return *this;
 }
 
+Tensor& Tensor::operator = (Tensor& other)
+{
+	inputs = other.inputs;
+	for (auto tensor : other.inputs)
+		for (size_t i = 0; i < tensor->peers.size(); i++)
+			if (tensor->peers[i] == &other)
+				tensor->peers[i] = this;
+	if (volume < other.volume)
+		shape_with(other.dimensions);
+	return *this;
+}
+
 Tensor& Tensor::transpose()
 {
 //	auto tensor = new type::Output;
@@ -420,14 +432,14 @@ Tensor& FullyConnectedLayer(Tensor& x, Tensor& weight, Tensor* bias, string acti
 	tensor->dependent_on(bias);
 	auto result = new type::Output({}, {tensor}, name.empty()? tensor->alias : name);
 	if (!x.dimensions.empty())
-		result->shape_with({ x.volume / x.dimensions.back(), weight.dimensions[0] });
+		result->shape_with({ x.volume / x.dimensions.back(), weight.dimensions.back() });
 	return *result;
 }
 
 Tensor& FullyConnectedLayer(Tensor& x, int num_hidden, std::string activation_function, std::string name)
 {
 	int dim_in = x.dimensions.back();
-	Tensor& weight = Weight({num_hidden, dim_in}, name + "_weight");
+	Tensor& weight = Weight({dim_in, num_hidden}, name + "_weight");
 	Tensor& bias = Bias({dim_in}, name + "_bias");
 	return FullyConnectedLayer(x, weight, &bias, activation_function, name);
 }
@@ -439,62 +451,18 @@ Tensor* back::Loss::generate_gradient(Tensor* next)
 
 Tensor* type::FullyConnectedLayer::generate_gradient(Tensor* out_gradient)
 {
-	Tensor* prober = nullptr;
-	if (CLNET_TENSOR_GLOBALS & CLNET_BACK_PROPAGATE_FUSION)
-		prober = peers[0]->peers[0];
-	if (dynamic_cast<back::Loss*>(prober) != nullptr) {
-		Tensor* in = inputs[0];
-		auto loss = static_cast<back::Loss*>(prober);
-		if (dynamic_cast<type::FullyConnectedLayer*>(in->inputs[0]) != nullptr) { //so, we need not generate in_grad for previous FC layer
-			Tensor& label = *loss->inputs[1];
-			Tensor& weight_grad = *clnet::Gradient(inputs[1]);
-			Tensor& bias_grad = *clnet::Gradient(inputs[2]);
-			return new back::kernel_gradient_loss_fully_connected(weight_grad, bias_grad, *in, *peers[0], label, loss->function, activation);
-		}
-	}
-	else if (dynamic_cast<type::FullyConnectedLayer*>(prober) != nullptr) { //cascade FullyConnected
-		Tensor* in = inputs[0];
-		auto nextFC = static_cast<type::FullyConnectedLayer*>(prober);
-		if (dynamic_cast<type::Data*>(in) != nullptr || dynamic_cast<type::FullyConnectedLayer*>(in) != nullptr) { //so, we need not generate in_grad since input is immutable Data
-			Tensor& weight_grad = *clnet::Gradient(inputs[1]);
-			Tensor& bias_grad = *clnet::Gradient(inputs[2]);
-			Tensor& weight_next = *nextFC->inputs[1];
-			Tensor& nabla_next = *clnet::Gradient(nextFC->inputs[2]);
-			return new back::kernel_gradient_cascade_fully_connected(weight_grad, bias_grad, *in, *peers[0], weight_next, nabla_next, activation);
-		}
-	}
-
 	auto back = new back::FullyConnectedLayer;
 	back->activation = activation;
 	back->alias = "back:" + alias;
 	back->inputs.push_back(out_gradient);
 	back->peers.push_back(clnet::Gradient(inputs[1], back)); //weight_grad
 	back->peers.push_back(clnet::Gradient(inputs[2], back)); //bias_grad
-	back->peers.push_back(inputs[1]); //weight
+	back->peers.push_back(inputs[1]); //peers[2]: weight
 	back->peers.push_back(inputs[0]); //peers[3]: in
-	back->peers.push_back(peers[0]); //out
+	back->peers.push_back(peers[0]); //peers[4]: out
 	auto in_gradient = clnet::Gradient(inputs[0], back);
 	back->peers.push_back(in_gradient); //peers[5]: in_gradient
 	return back;
-}
-
-back::kernel_gradient_loss_fully_connected::kernel_gradient_loss_fully_connected(Tensor& weight_grad, Tensor& bias_grad, Tensor& in, Tensor& out, Tensor& label, string loss, string activation, string name)
-{
-	alias = name;
-	this->loss = loss;
-	this->activation = activation;
-	inputs = {&in, &out, &label};
-	weight_grad.dependent_on(this);
-	bias_grad.dependent_on(this);
-}
-
-back::kernel_gradient_cascade_fully_connected::kernel_gradient_cascade_fully_connected(Tensor& weight_grad, Tensor& bias_grad, Tensor& in, Tensor& out, Tensor& weight_next, Tensor& nabla_next, string activation, string name)
-{
-	this->alias = name;
-	this->activation = activation;
-	inputs = {&in, &out, &weight_next, &nabla_next};
-	weight_grad.dependent_on(this);
-	bias_grad.dependent_on(this);
 }
 
 Tensor& LSTMCell(Tensor& cell, Tensor& hidden, Tensor* gates_data, Tensor& weight_h, Tensor& weight_x, Tensor& x, Tensor* bias, Tensor& cell_no, string name)
@@ -556,8 +524,8 @@ Tensor& LSTM(Tensor& input, int num_layer, int num_hidden, float dropout, string
 	auto gates_data = predictOnly? nullptr : new Tensor({sequence_length_max, num_layer, 7 * batch_size * num_hidden}, {}, name + "_gates_data");
 	for (int l = 0; l < num_layer; l++) {
 		const auto& layer = to_string(l);
-		Tensor& weight_h = Weight({4 * num_hidden, num_hidden}, name + "_weight_h" + layer);
-		Tensor& weight_x = Weight({4 * num_hidden, next->dimensions.back()}, name + "_weight_x" + layer);
+		Tensor& weight_h = Weight({num_hidden, 4 * num_hidden}, name + "_weight_h" + layer);
+		Tensor& weight_x = Weight({next->dimensions.back(), 4 * num_hidden}, name + "_weight_x" + layer);
 		Tensor& bias = Bias({4 * num_hidden}, name + "_bias" + layer);
 		auto cell_state = new type::Output({batch_size, num_hidden}, {}, name + "_cell_state" + layer);
 		auto hidden = new type::Output({batch_size, num_hidden}, {}, name + "_hidden" + layer);

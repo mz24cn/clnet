@@ -206,7 +206,7 @@ T charRNN(bool is_predict)
 	T embedding = Embedding(data, embedding_matrix);
 	T lstm = LSTM(embedding, num_layer, num_hidden, /*0.2f*/0);
 
-	T class_weight = Weight({V, num_hidden}, "class_weight");
+	T class_weight = Weight({num_hidden, V}, "class_weight");
 	T class_bias = Bias({V}, "class_bias");
 	T output = FullyConnectedLayer(lstm, class_weight, &class_bias, "", "FC");
 	if (is_predict)

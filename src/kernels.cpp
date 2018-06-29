@@ -30,6 +30,7 @@ unordered_map<Tensor*, size_t> kernels_cost;
 
 extern int debugger_device_id;
 extern condition_variable breakpoint;
+unordered_map<Tensor*, cl::Buffer> temp_global_buffer;
 mutex breakpoint_mutex;
 Tensor *_current, *_breakpoint = nullptr;
 int64 microseconds = 0, breakpoint_hit_times = -1; //paused on all devices initially
@@ -97,15 +98,26 @@ string generate_kernel_sources(DeviceInstance& I, const cl::Device& device, unor
 
 		if (source.empty())
 			continue;
-		int begin = source.find(KERNEL_DEF) + KERNEL_DEF.size();
-		int end = source.find("(", begin);
-		name = source.substr(begin, end - begin);
-		if (kernels.count(name) == 0) {
-			kernels.insert(name);
-			sources.append("\n").append(source);
+		size_t pos = 0;
+		while ((pos = source.find(KERNEL_DEF, pos)) != string::npos) {
+			int begin = pos + KERNEL_DEF.size();
+			int end = source.find("(", begin);
+			name = source.substr(begin, end - begin);
+			if (kernels.count(name) == 0) {
+				kernels.insert(name);
+				size_t pos2 = source.find(KERNEL_DEF, pos + KERNEL_DEF.size());
+				if (pos2 != string::npos)
+					pos2 = source.rfind("}\n", pos2) + 2;
+				else
+					pos2 = source.size();
+				sources.append("\n").append(source.substr(pos, pos2 - pos));
+			}
+//			logger << "****** " << name << endl << code << endl;
+			if (!tensor_kernels[tensor].empty())
+				tensor_kernels[tensor].append(" ");
+			tensor_kernels[tensor].append(name);
+			pos++;
 		}
-//		logger << "****** " << name << endl << code << endl;
-		tensor_kernels[tensor] = name;
 	}
 	return sources;
 }
@@ -171,19 +183,19 @@ int find_proper_local_size(int required, int work_group_size)
 		return work_group_size;
 }
 
-inline cl::Kernel& prepare_for_running_kernel(Tensor* tensor, DeviceInstance& I)
+cl::Kernel& prepare_for_running_kernel(Tensor* tensor, DeviceInstance& I, int number)
 {
 	I.precondition_events.clear();
 	for (auto input : tensor->inputs)
 		if (input != nullptr && input->volume > 0) //exclude "pure kernel" tensor
 			I.precondition_events.push_back(I.events[input]);
-	return I.kernels[tensor];
+	return I.kernels[tensor][number];
 }
 
-#define FULLY_CONNECTED_STD_DIM_IN_UPLIMIT 64
+#define FULLY_CONNECTED_STD_DIM_IN_UPLIMIT 512
 string type::FullyConnectedLayer::generate_source_code(DeviceInstance& I)
 {
-	int dim_in = inputs[1]->dimensions[1];
+	int dim_in = inputs[1]->dimensions.front(); //inputs[1]: weight
 	string code; //make a copy
 	if (dim_in < FULLY_CONNECTED_STD_DIM_IN_UPLIMIT) {
 		//Parallel: (batch_size * dim_hidden)
@@ -199,11 +211,14 @@ string type::FullyConnectedLayer::generate_source_code(DeviceInstance& I)
 			replace_all(code, "sigmoid", activation);
 	}
 	else {
+		code = kernels_source["feed_forward_fully_connected_sigmoid"];
+		if (activation != "sigmoid")
+			replace_all(code, "sigmoid", activation);
 		//Parallel: (batch_size * dim_hidden * get_local_size(0))
 		//Note: choose local NDRange size near (2 * dim_in) when enqueue ASAP
-		code = kernels_source["feed_forward_fully_connected_softrelu"];
-		if (activation != "softrelu")
-			replace_all(code, "softrelu", activation);
+//		code = kernels_source["feed_forward_fully_connected_softrelu"];//TODO
+//		if (activation != "softrelu")
+//			replace_all(code, "softrelu", activation);
 	}
 
 	return code;
@@ -213,8 +228,8 @@ void type::FullyConnectedLayer::run(DeviceInstance& I)
 {
 	auto& kernel = prepare_for_running_kernel(this, I);
 	int N = inputs[0]->volume / inputs[0]->dimensions.back();
-	int HIDDEN = inputs[1]->dimensions[0];
-	int dim_in = inputs[1]->dimensions[1];
+	int HIDDEN = inputs[1]->dimensions.back();
+	int dim_in = inputs[1]->dimensions.front();
 	kernel.setArg(0, I.buffers[peers[0]]);
 	kernel.setArg(1, I.buffers[inputs[0]]);
 	kernel.setArg(2, I.buffers[inputs[1]]);
@@ -228,15 +243,15 @@ void type::FullyConnectedLayer::run(DeviceInstance& I)
 	kernel.setArg(4, tmpMem);
 	kernel.setArg(5, HIDDEN);
 	kernel.setArg(6, dim_in);
-	if (dim_in < FULLY_CONNECTED_STD_DIM_IN_UPLIMIT) {
+//	if (dim_in < FULLY_CONNECTED_STD_DIM_IN_UPLIMIT) {//TODO
 		cl::NDRange global(N * HIDDEN);
 		I.queue.enqueueNDRangeKernel(kernel, cl::NullRange, global, cl::NullRange, &I.precondition_events, &I.events[peers[0]]);
-	}
-	else {
-		cl::NDRange local(parallel);
-		cl::NDRange global(N * HIDDEN * parallel);
-		I.queue.enqueueNDRangeKernel(kernel, cl::NullRange, global, local, &I.precondition_events, &I.events[peers[0]]);
-	}
+//	}
+//	else {
+//		cl::NDRange local(parallel);
+//		cl::NDRange global(N * HIDDEN * parallel);
+//		I.queue.enqueueNDRangeKernel(kernel, cl::NullRange, global, local, &I.precondition_events, &I.events[peers[0]]);
+//	}
 }
 
 string type::DropOut::generate_source_code(DeviceInstance& I)
@@ -319,9 +334,16 @@ void back::DropOut::run(DeviceInstance& I)
 	dropout->refresh_random_numbers(I, I.precondition_events);
 }
 
+#define FULLY_CONNECTED_STD_DIM_IN_UPLIMIT_BP 4096
 string back::FullyConnectedLayer::generate_source_code(DeviceInstance& I)
 {
-	string code = kernels_source["back_propagate_fully_connected_softrelu_gradient"];
+	auto weight = peers[2]; //peers[2]: weight
+	int dim_in = weight->dimensions.front();
+	string code;
+	if (dim_in < FULLY_CONNECTED_STD_DIM_IN_UPLIMIT_BP)
+		code = kernels_source["back_propagate_fully_connected_softrelu_gradient"];
+	else
+		code = kernels_source["back_propagate_fully_connected_softrelu_gradient_for_bias"] + "\n" + kernels_source["back_propagate_fully_connected_softrelu_gradient_for_weight"] + "\n" + kernels_source["back_propagate_fully_connected_softrelu_gradient_for_data"];
 	if (activation != "softrelu")
 		replace_all(code, "softrelu", activation);
 
@@ -331,117 +353,91 @@ string back::FullyConnectedLayer::generate_source_code(DeviceInstance& I)
 void back::FullyConnectedLayer::run(DeviceInstance& I)
 {
 	auto& kernel = prepare_for_running_kernel(this, I);
-	int N = peers[3]->volume / peers[3]->dimensions.back();
-	int dim_in = peers[2]->dimensions[1];
-	int dim_out = peers[2]->dimensions[0];
+	auto weight = peers[2]; //peers[2]: weight
+	int N = peers[3]->volume / peers[3]->dimensions.back(); //peers[3]: in
+	int dim_in = weight->dimensions.front();
+	int dim_out = weight->dimensions.back();
 	auto in_gradient = peers[5];
-	if (in_gradient != nullptr)
-		kernel.setArg(0, I.buffers[in_gradient]);
-	else
-		kernel.setArg(0, nullptr);
-	kernel.setArg(1, I.buffers[peers[0]]);
-	auto bias = peers[1];
-	if (bias != nullptr)
-		kernel.setArg(2, I.buffers[bias]);
-	else
-		kernel.setArg(2, nullptr);
-	kernel.setArg(3, I.buffers[peers[2]]);
-	kernel.setArg(4, I.buffers[peers[3]]);
-	kernel.setArg(5, I.buffers[peers[4]]);
-	kernel.setArg(6, I.buffers[inputs[0]]);
+	auto weight_gradient = peers[0];
+	auto bias_gradient = peers[1];
 
-	int global_size = (N > dim_out? N : dim_out) * dim_in;
-	kernel.setArg(7, dim_out);
-	kernel.setArg(8, dim_in);
-	kernel.setArg(9, N);
-	kernel.setArg(10, attached? 1 : 0); //merge_gradient mode
+	if (dim_in < FULLY_CONNECTED_STD_DIM_IN_UPLIMIT_BP) {
+		if (in_gradient != nullptr)
+			kernel.setArg(0, I.buffers[in_gradient]);
+		else
+			kernel.setArg(0, nullptr);
+		kernel.setArg(1, I.buffers[peers[0]]);
+		if (bias_gradient != nullptr)
+			kernel.setArg(2, I.buffers[bias_gradient]);
+		else
+			kernel.setArg(2, nullptr);
+		kernel.setArg(3, I.buffers[peers[2]]);
+		kernel.setArg(4, I.buffers[peers[3]]);
+		kernel.setArg(5, I.buffers[peers[4]]);
+		kernel.setArg(6, I.buffers[inputs[0]]);
 
-	cl::Event& event = I.events[peers[0]];
-	cl::NDRange global(global_size);
-	I.queue.enqueueNDRangeKernel(kernel, cl::NullRange, global, cl::NullRange, &I.precondition_events, &event);
-	if (in_gradient != nullptr)
-		I.events[in_gradient] = event;
-	if (bias != nullptr)
-		I.events[bias] = event;
-}
+		int global_size = (N > dim_out? N : dim_out) * dim_in;
+		kernel.setArg(7, dim_out);
+		kernel.setArg(8, dim_in);
+		kernel.setArg(9, N);
+		kernel.setArg(10, attached? 1 : 0); //merge_gradient mode
 
-string back::kernel_gradient_cascade_fully_connected::generate_source_code(DeviceInstance& I)
-{
-	string code = kernels_source["back_propagate_cascade_fully_connected_sigmoid_gradient"];
-	if (activation != "sigmoid")
-		replace_all(code, "sigmoid", activation);
+		cl::Event& event = I.events[weight_gradient];
+		cl::NDRange global(global_size);
+		I.queue.enqueueNDRangeKernel(kernel, cl::NullRange, global, cl::NullRange, &I.precondition_events, &event);
+		if (in_gradient != nullptr)
+			I.events[in_gradient] = event;
+		if (bias_gradient != nullptr)
+			I.events[bias_gradient] = event;
+	}
+	else {
+		if (temp_global_buffer.count(this) == 0) {
+			auto context = I.queue.getInfo<CL_QUEUE_CONTEXT>();
+			temp_global_buffer[this] = cl::Buffer(context, CL_MEM_READ_WRITE, N * dim_out * sizeof(float));
+		}
+		kernel.setArg(0, temp_global_buffer[this]);
+		if (bias_gradient != nullptr)
+			kernel.setArg(1, I.buffers[bias_gradient]);
+		else
+			kernel.setArg(1, nullptr);
+		kernel.setArg(2, I.buffers[peers[4]]); //out
+		kernel.setArg(3, I.buffers[inputs[0]]); //out_gradient
+		kernel.setArg(4, dim_out);
+		kernel.setArg(5, dim_in);
+		kernel.setArg(6, N);
 
-	return code;
-}
+		cl::Event& event = I.events[this];
+		I.queue.enqueueNDRangeKernel(kernel, cl::NullRange, cl::NDRange(dim_out), cl::NullRange, &I.precondition_events, &event);
+		if (bias_gradient != nullptr)
+			I.events[bias_gradient] = event;
 
-void back::kernel_gradient_cascade_fully_connected::run(DeviceInstance& I)
-{
-	auto& kernel = prepare_for_running_kernel(this, I);
-	int batch_size = inputs[0]->dimensions[0];
-	int dim_in = inputs[0]->dimensions[1];
-	int dim_out = inputs[1]->dimensions[1];
-	int dim_weight_next_out = inputs[2]->dimensions[0];
-	kernel.setArg(0, I.buffers[peers[0]]);
-	if (peers[1] != nullptr)
-		kernel.setArg(1, I.buffers[peers[1]]);
-	else
-		kernel.setArg(1, nullptr);
-	kernel.setArg(2, I.buffers[inputs[0]]);
-	kernel.setArg(3, I.buffers[inputs[1]]);
-	kernel.setArg(4, I.buffers[inputs[2]]);
-	kernel.setArg(5, I.buffers[inputs[3]]);
+		auto& kernel1 = I.kernels[this][1];
+		kernel1.setArg(0, I.buffers[weight_gradient]);
+		kernel1.setArg(1, temp_global_buffer[this]);
+		kernel1.setArg(2, I.buffers[peers[3]]); //in
+		kernel1.setArg(3, dim_out);
+		kernel1.setArg(4, dim_in);
+		kernel1.setArg(5, N);
+		I.precondition_events.clear();
+		I.precondition_events.push_back(event);
+		I.queue.enqueueNDRangeKernel(kernel1, cl::NullRange, cl::NDRange(dim_out, dim_in), cl::NullRange, &I.precondition_events, &I.events[weight_gradient]);
 
-	cl::LocalSpaceArg tmpMem = cl::Local(sizeof(float) * I.work_group_size);
-	kernel.setArg(6, tmpMem);
-	kernel.setArg(7, dim_out);
-	kernel.setArg(8, dim_in);
-	kernel.setArg(9, dim_weight_next_out);
-	kernel.setArg(10, batch_size);
-
-	cl::NDRange global(inputs[0]->dimensions[0] * inputs[0]->dimensions[1]);
-	I.queue.enqueueNDRangeKernel(kernel, cl::NullRange, global, cl::NullRange, &I.precondition_events, &I.events[peers[0]]);
-	if (peers[1] != nullptr)
-		I.events[peers[1]] = I.events[peers[0]];
-}
-
-string back::kernel_gradient_loss_fully_connected::generate_source_code(DeviceInstance& I)
-{
-	string name = "back_propagate_" + loss + "_loss_softrelu_gradient";
-	string code = kernels_source[name];
-	if (activation != "softrelu")
-		replace_all(code, "softrelu", activation);
-
-	return code;
-}
-
-void back::kernel_gradient_loss_fully_connected::run(DeviceInstance& I)
-{
-	auto& kernel = prepare_for_running_kernel(this, I);
-	int batch_size = inputs[0]->dimensions[0];
-	int dim_in = inputs[0]->dimensions[1];
-	int dim_out = inputs[1]->dimensions[1];
-	kernel.setArg(0, I.buffers[peers[0]]);
-	if (peers[1] != nullptr)
-		kernel.setArg(1, I.buffers[peers[1]]);
-	else
-		kernel.setArg(1, nullptr);
-	kernel.setArg(2, I.buffers[inputs[0]]);
-	kernel.setArg(3, I.buffers[inputs[1]]);
-	kernel.setArg(4, I.buffers[inputs[2]]);
-
-	cl::LocalSpaceArg tmpMem = cl::Local(sizeof(float) * I.work_group_size);
-	kernel.setArg(5, tmpMem);
-	kernel.setArg(6, dim_out);
-	kernel.setArg(7, dim_in);
-	kernel.setArg(8, batch_size);
-
-	if (I.work_group_size < batch_size * 2)
-		throw cl::Error(USER_GROUP_SIZE_NOT_BIG_ENOUGH);
-	cl::NDRange local(batch_size);
-	cl::NDRange global(dim_out * dim_in * batch_size);
-	I.queue.enqueueNDRangeKernel(kernel, cl::NullRange, global, local, &I.precondition_events, &I.events[peers[0]]);
-	if (peers[1] != nullptr)
-		I.events[peers[1]] = I.events[peers[0]];
+		if (in_gradient != nullptr) {
+			auto& kernel2 = prepare_for_running_kernel(this, I, 2);
+			if (in_gradient != nullptr)
+				kernel2.setArg(0, I.buffers[in_gradient]);
+			else
+				kernel2.setArg(0, nullptr);
+			kernel2.setArg(1, I.buffers[weight]);
+			kernel2.setArg(2, I.buffers[peers[4]]); //out
+			kernel2.setArg(3, I.buffers[inputs[0]]); //out_gradient
+			kernel2.setArg(4, dim_out);
+			kernel2.setArg(5, dim_in);
+			kernel2.setArg(6, N);
+			kernel2.setArg(7, attached? 1 : 0); //merge_gradient mode
+			I.queue.enqueueNDRangeKernel(kernel2, cl::NullRange, cl::NDRange(N * dim_in), cl::NullRange, &I.precondition_events, &I.events[in_gradient]);
+		}
+	}
 }
 
 size_t& type::IterativeOptimizer::current_epoch(DeviceInstance& I)
@@ -512,7 +508,7 @@ void type::StochasticGradientDescentUpdater::run(DeviceInstance& I)
 		}
 	}
 	else {
-		auto& kernel = I.kernels[this];
+		auto& kernel = I.kernels[this].front();
 
 		for (int i = 0, N = peers.size(); i < N ; i++) {
 			auto parameter = peers[i];
@@ -530,7 +526,7 @@ void type::StochasticGradientDescentUpdater::run(DeviceInstance& I)
 
 void type::StochasticGradientDescentUpdater::run_globally(DeviceInstance& I, DeviceInstance& source)
 {
-	auto& kernel = I.kernels[this];
+	auto& kernel = I.kernels[this].front();
 	cl::Event event;
 	vector<cl::Event> preconditions, updates;
 	for (int i = 0, N = peers.size(); i < N; i++) {
@@ -573,10 +569,16 @@ void type::XavierNormalDistributionInitializer::run_globally(DeviceInstance& I)
 {
 	default_random_engine generator;
 	for (auto tensor : peers) {
-		int fan_in = tensor->dimensions.back();
+		int fan_in = tensor->dimensions.front(); //TODO
 		normal_distribution<float> distribution(mu, sqrt(sigma / fan_in));
-		for (float *p = tensor->pointer, *end = p + tensor->volume; p < end; p++)
-			*p = (float) distribution(generator);
+		if (dynamic_cast<Weight*>(tensor) != nullptr) { //TODO
+			for (int64 hidden = 0; hidden < tensor->dimensions.back(); hidden++)
+				for (int64 k = 0; k < tensor->dimensions.front(); k++)
+					tensor->pointer[k * tensor->dimensions.back() + hidden] = (float) distribution(generator);
+		}
+		else if (dynamic_cast<Bias*>(tensor) == nullptr)
+			for (float *p = tensor->pointer, *end = p + tensor->volume; p < end; p++)
+				*p = (float) distribution(generator);
 	}
 }
 
@@ -811,36 +813,6 @@ void back::LSTMCell::run(DeviceInstance& I)
 
 	cl::NDRange global(batch_size * dim_hidden);
 	I.queue.enqueueNDRangeKernel(kernel, cl::NullRange, global, cl::NullRange, &I.precondition_events, &I.events[peers[0]]);
-
-	// fully connected fusion version TODO
-//	auto& kernel = prepare_for_running_kernel(this, I);
-//	auto cell_no = I.pointers[peers[2]];
-//	int batch_size = dimensions[0];
-//	int dim_hidden = dimensions[1];
-//	int dim_input = peers[5]->dimensions[1];
-//	kernel.setArg(0, I.buffers[peers[0]]); //weight_h_grad
-//	kernel.setArg(1, I.buffers[peers[1]]); //weight_x_grad
-//	kernel.setArg(2, I.buffers[peers[2]]); //bias_grad
-//	kernel.setArg(3, I.buffers[inputs[0]]); //h_grad
-//	kernel.setArg(4, I.buffers[peers[7]]); //x_grad
-//	kernel.setArg(5, I.buffers[peers[4]]); //gates_data
-//	kernel.setArg(6, I.buffers[peers[5]]); //x
-//	kernel.setArg(7, I.buffers[peers[6]]); //weight_h
-//	kernel.setArg(8, I.buffers[peers[8]]); //weight_x
-//
-//	int parallel = find_proper_local_size(dim_hidden < dim_input? dim_hidden : dim_input, I.work_group_size);
-//	cl::LocalSpaceArg tmpMem = cl::Local(sizeof(float) * parallel);
-//	kernel.setArg(9, tmpMem);
-//	kernel.setArg(10, dim_input);
-//	kernel.setArg(11, dim_hidden);
-//	kernel.setArg(12, batch_size);
-//	kernel.setArg(13, static_cast<int>(cell_no[0]));
-//
-//	cl::NDRange global(dim_hidden * parallel);
-//	cl::NDRange local(parallel);
-//	I.queue.enqueueNDRangeKernel(kernel, cl::NullRange, global, local, &I.precondition_events, &I.events[inputs[0]]);
-//	I.events[peers[0]] = I.events[peers[1]] = I.events[peers[2]] = I.events[peers[7]] = I.events[inputs[0]];
-//	cell_no[0] += cell_no[1];
 }
 
 string back::Loss::generate_source_code(DeviceInstance& I)
