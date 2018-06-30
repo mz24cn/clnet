@@ -44,42 +44,42 @@ D:/DataSets/下需包含MNIST数据集文件train-images.idx3-ubyte，train-labe
 .\Release\OpenCLNet.exe MLP /ss /ds /0  
 ```
 <pre>
-clnet::type::XavierNormalDistributionInitializer                XavierNormalDistributionInitializer  
---       clnet::type::Weight             l0_weight[2,4096]  
-                clnet::type::Bias               l0_bias[4096]  
-                clnet::type::Weight             l1_weight[4096,1]  
-                clnet::type::Bias               l1_bias[1]  
-clnet::type::IterativeOptimizer         IterativeOptimizer[4]  
-                clnet::InstantTensor            data_generator  
-                clnet::type::Data               X[128,2]  
-                clnet::type::Weight             l0_weight[2,4096]  
-                clnet::type::Bias               l0_bias[4096]  
-                clnet::type::FullyConnectedLayer                FCLayer_0=sigmoid(l0_weight*X+l0_bias)  
-                clnet::type::Output             FCLayer_0[128,4096]  
-                clnet::type::Weight             l1_weight[4096,1]  
-                clnet::type::Bias               l1_bias[1]  
-                clnet::type::FullyConnectedLayer                FCLayer_1=softrelu(l1_weight*FCLayer_0+l1_bias)  
-                clnet::type::Output             FCLayer_1[128,1]  
-                clnet::type::Data               Y[128]  
-                clnet::back::Loss               linear_regression(FCLayer_1,Y)  
-                clnet::back::Gradient           gradient(FCLayer_1)[128,1]  
-                clnet::back::FullyConnectedLayer                back:FCLayer_1=softrelu(l1_weight*FCLayer_0+l1_bias)  
-                clnet::back::Gradient           gradient(FCLayer_0)[128,4096]  
-                clnet::back::FullyConnectedLayer                back:FCLayer_0=sigmoid(l0_weight*X+l0_bias)  
-                clnet::back::Gradient           gradient(l0_weight)[2,4096]  
-                clnet::back::Gradient           gradient(l0_bias)[4096]  
-                clnet::back::Gradient           gradient(l1_weight)[4096,1]  
-                clnet::back::Gradient           gradient(l1_bias)[1]  
-                clnet::type::StochasticGradientDescentUpdater           SGD  
---       clnet::type::Weight             l0_weight[2,4096]  
-                                clnet::type::Bias               l0_bias[4096]  
-                                clnet::type::Weight             l1_weight[4096,1]  
-                                clnet::type::Bias               l1_bias[1]  
---       clnet::InstantTensor            MLPMonitor  
+clnet::type::XavierNormalDistributionInitializer                XavierNormalDistributionInitializer
+-       clnet::type::Weight             l0_weight[2,4096]
+        clnet::type::Bias               l0_bias[4096]
+        clnet::type::Weight             l1_weight[4096,1]
+        clnet::type::Bias               l1_bias[1]
+clnet::type::IterativeOptimizer         IterativeOptimizer[4]
+        clnet::InstantTensor            data_generator
+        clnet::type::Data               X[128,2]
+        clnet::type::Weight             l0_weight[2,4096]
+        clnet::type::Bias               l0_bias[4096]
+        clnet::type::FullyConnectedLayer                FCLayer_0=sigmoid(l0_weight*X+l0_bias)
+        clnet::type::Output             FCLayer_0[128,4096]
+        clnet::type::Weight             l1_weight[4096,1]
+        clnet::type::Bias               l1_bias[1]
+        clnet::type::FullyConnectedLayer                FCLayer_1=softrelu(l1_weight*FCLayer_0+l1_bias)
+        clnet::type::Output             FCLayer_1[128,1]
+        clnet::type::Data               Y[128]
+        clnet::back::Loss               linear_regression(FCLayer_1,Y)
+        clnet::back::Gradient           gradient(FCLayer_1)[128,1]
+        clnet::back::FullyConnectedLayer                back:FCLayer_1=softrelu(l1_weight*FCLayer_0+l1_bias)
+        clnet::back::Gradient           gradient(FCLayer_0)[128,4096]
+        clnet::back::FullyConnectedLayer                back:FCLayer_0=sigmoid(l0_weight*X+l0_bias)
+        clnet::back::Gradient           gradient(l0_weight)[2,4096]
+        clnet::back::Gradient           gradient(l0_bias)[4096]
+        clnet::back::Gradient           gradient(l1_weight)[4096,1]
+        clnet::back::Gradient           gradient(l1_bias)[1]
+        clnet::type::StochasticGradientDescentUpdater           SGD
+-               clnet::type::Weight             l0_weight[2,4096]
+                clnet::type::Bias               l0_bias[4096]
+                clnet::type::Weight             l1_weight[4096,1]
+                clnet::type::Bias               l1_bias[1]
+-       clnet::InstantTensor            MLPMonitor
 
-[1,@2018-06-30 14:06:21] GeForce GTX 1050 Ti (kernels build: 635ms)  
-[debugger] interactive thread started on device 1.  
-[debugger] device 1 break on IterativeOptimizer: clnet::type::IterativeOptimizer  
+[1,@2018-06-30 16:24:29] GeForce GTX 1050 Ti (kernels build: 119ms)
+[debugger] interactive thread started on device 1.
+[debugger] device 1 break on IterativeOptimizer: clnet::type::IterativeOptimizer 
 </pre>
 执行到SGD（别名为SGD的Tensor）：  
 ```
