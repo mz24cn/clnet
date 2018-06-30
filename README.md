@@ -57,15 +57,15 @@ clnet::type::IterativeOptimizer         IterativeOptimizer[4]
         clnet::type::FullyConnectedLayer                FCLayer_1=softrelu(l1_weight*FCLayer_0+l1_bias)
         clnet::type::Output             FCLayer_1[128,1]
         clnet::type::Data               Y[128]
-        clnet::back::Loss               linear_regression(FCLayer_1,Y)
-        clnet::back::Gradient           gradient(FCLayer_1)[128,1]
-        clnet::back::FullyConnectedLayer                back:FCLayer_1=softrelu(l1_weight*FCLayer_0+l1_bias)
-        clnet::back::Gradient           gradient(FCLayer_0)[128,4096]
-        clnet::back::FullyConnectedLayer                back:FCLayer_0=sigmoid(l0_weight*X+l0_bias)
-        clnet::back::Gradient           gradient(l0_weight)[2,4096]
-        clnet::back::Gradient           gradient(l0_bias)[4096]
-        clnet::back::Gradient           gradient(l1_weight)[4096,1]
-        clnet::back::Gradient           gradient(l1_bias)[1]
+        clnet:\:back::Loss               linear_regression(FCLayer_1,Y)
+        clnet:\:back::Gradient           gradient(FCLayer_1)[128,1]
+        clnet:\:back::FullyConnectedLayer                back:FCLayer_1=softrelu(l1_weight*FCLayer_0+l1_bias)
+        clnet:\:back::Gradient           gradient(FCLayer_0)[128,4096]
+        clnet:\:back::FullyConnectedLayer                back:FCLayer_0=sigmoid(l0_weight*X+l0_bias)
+        clnet:\:back::Gradient           gradient(l0_weight)[2,4096]
+        clnet:\:back::Gradient           gradient(l0_bias)[4096]
+        clnet:\:back::Gradient           gradient(l1_weight)[4096,1]
+        clnet:\:back::Gradient           gradient(l1_bias)[1]
         clnet::type::StochasticGradientDescentUpdater           SGD
 -               clnet::type::Weight             l0_weight[2,4096]
                 clnet::type::Bias               l0_bias[4096]
@@ -117,9 +117,23 @@ X[128,2]: clnet::type::Data
  ...  
 观察梯度值：  
 ```
+d l0_weight
+```
+        this:                   0x2b227b0
+        type:                   clnet::type::Weight
+        alias:                  l0_weight
+        volume:                 8192
+        dimensions:             [2,4096]
+        size:                   32768 bytes
+        pointer:                0x2b2c900
+        gradient:               gradient(l0_weight)[2,4096]: clnet:\:back::Gradient
+        inputs:
+        peers:
+                FCLayer_0=sigmoid(l0_weight*X+l0_bias)[]: clnet::type::FullyConnectedLayer
+```
 gradient(l0_weight)
 ```
-gradient(l0_weight)[2,4096]: clnet::back::Gradient
+gradient(l0_weight)[2,4096]: clnet:\:back::Gradient
 0
 0:      0.0932272,-0.00103467,0.616816,0.0487299,0.108153,0.453982,-0.168111,0.00612603,0.0466066,0.0776809,0.480914,0.00167271,-0.0579107,-0.171267,-0.00544866,0.0305377,0.396773,-0.0364095,-0.0105135,-0.244325,0.0070936,-0.0271294,0.0982886,0.000907668,0.0083473,0.000168261,0.038511,-0.00443278,-0.141771,-0.000452508,0.0574187,0.59741,-0.0461692,0.0273872,0.0211383,0.0937608,-0.0543251,-0.0177396,0.0404992,0.244961 ...
 1:      0.043596,-0.105236,0.252182,0.0135588,0.0468406,0.208793,-0.0282288,0.0436221,0.0046685,0.0364535,0.231056,0.0131293,-0.0219158,-0.0984129,-0.000470661,0.010817,0.0848113,-0.00210151,-0.00500153,-0.113508,0.00290996,-0.00091675,-0.0437556,0.000426235,0.0348718,6.88916e-005,0.011789,-0.0166271,-0.046225,-0.000272511,0.0210079,0.22276,-0.0209225,0.0109369,0.00923857,0.0413359,0.0153701,0.0267138,0.0193877,0.177686 ...  
@@ -127,7 +141,7 @@ gradient(l0_weight)[2,4096]: clnet::back::Gradient
 ```
 gradient(l0_weight)[:,0:8]
 ```
-data[0:2/2,0:8/4096] for gradient(l0_weight)[2,4096]: clnet::back::Gradient
+data[0:2/2,0:8/4096] for gradient(l0_weight)[2,4096]: clnet:\:back::Gradient
 0:      0.0932272,-0.00103467,0.616816,0.0487299,0.108153,0.453982,-0.168111,0.00612603
 1:      0.043596,-0.105236,0.252182,0.0135588,0.0468406,0.208793,-0.0282288,0.0436221  
 ```
@@ -188,28 +202,28 @@ p
 pf list
 ```
 <pre>
-back:FCLayer_1=softrelu(l1_weight*FCLayer_0+l1_bias): clnet::back::FullyConnectedLayer:              3s.271ms/20%  
+back:FCLayer_1=softrelu(l1_weight*FCLayer_0+l1_bias): clnet:\:back::FullyConnectedLayer:              3s.271ms/20%  
 FCLayer_1=softrelu(l1_weight*FCLayer_0+l1_bias): clnet::type::FullyConnectedLayer:              3s.87ms/19%  
-back:FCLayer_0=sigmoid(l0_weight*X+l0_bias): clnet::back::FullyConnectedLayer:          923ms/5%  
+back:FCLayer_0=sigmoid(l0_weight*X+l0_bias): clnet:\:back::FullyConnectedLayer:          923ms/5%  
 SGD: clnet::type::StochasticGradientDescentUpdater:             872ms/5%  
 FCLayer_0=sigmoid(l0_weight*X+l0_bias): clnet::type::FullyConnectedLayer:               854ms/5%  
 X: clnet::type::Data:           805ms/4%  
-linear_regression(FCLayer_1,Y): clnet::back::Loss:              641ms/3%  
+linear_regression(FCLayer_1,Y): clnet:\:back::Loss:              641ms/3%  
 Y: clnet::type::Data:           593ms/3%  
 data_generator: clnet::InstantTensor:           507ms/3%  
 MLPMonitor: clnet::InstantTensor:               455ms/2%  
-gradient(FCLayer_0): clnet::back::Gradient:             440ms/2%  
+gradient(FCLayer_0): clnet:\:back::Gradient:             440ms/2%  
 l0_bias: clnet::type::Bias:             397ms/2%  
 l0_weight: clnet::type::Weight:                 395ms/2%  
-gradient(FCLayer_1): clnet::back::Gradient:             363ms/2%  
+gradient(FCLayer_1): clnet:\:back::Gradient:             363ms/2%  
 FCLayer_1: clnet::type::Output:                 355ms/2%  
 l1_bias: clnet::type::Bias:             347ms/2%  
-gradient(l0_weight): clnet::back::Gradient:             335ms/2%  
+gradient(l0_weight): clnet:\:back::Gradient:             335ms/2%  
 FCLayer_0: clnet::type::Output:                 334ms/2%  
-gradient(l0_bias): clnet::back::Gradient:               324ms/2%  
+gradient(l0_bias): clnet:\:back::Gradient:               324ms/2%  
 l1_weight: clnet::type::Weight:                 289ms/1%  
-gradient(l1_bias): clnet::back::Gradient:               287ms/1%  
-gradient(l1_weight): clnet::back::Gradient:             278ms/1%  
+gradient(l1_bias): clnet:\:back::Gradient:               287ms/1%  
+gradient(l1_weight): clnet:\:back::Gradient:             278ms/1%  
 </pre>
 使用动态执行图，在执行“不等长”的数据如RNN-LSTM上，有性能优势：  
 ```
@@ -287,59 +301,59 @@ clnet::type::IterativeOptimizer         IterativeOptimizer[4]
         clnet::type::FullyConnectedLayer                FC=class_weight*lstm+class_bias
         clnet::type::Output             FC[4128,84]
         clnet::type::Data               label[32,129]
-        clnet::back::Loss               negative_log_likelihood(softmax(FC),label)
-        clnet::back::Gradient           gradient(FC)[4128,84]
-        clnet::back::FullyConnectedLayer                back:FC=class_weight*lstm+class_bias
-        clnet::back::Gradient           gradient(lstm)[32,129,256]
+        clnet:\:back::Loss               negative_log_likelihood(softmax(FC),label)
+        clnet:\:back::Gradient           gradient(FC)[4128,84]
+        clnet:\:back::FullyConnectedLayer                back:FC=class_weight*lstm+class_bias
+        clnet:\:back::Gradient           gradient(lstm)[32,129,256]
         clnet::type::LSTMInitializer            LSTM(embedding)_gradient_initializer
--               clnet::back::Gradient           gradient(lstm_cell_state0)[32,256]
-                clnet::back::Gradient           gradient(lstm_hidden0)[32,256]
-                clnet::back::Gradient           gradient(lstm_cell_state1)[32,256]
-                clnet::back::Gradient           gradient(lstm_hidden1)[32,256]
-                clnet::back::Gradient           gradient(lstm_cell_state2)[32,256]
-                clnet::back::Gradient           gradient(lstm_hidden2)[32,256]
-        clnet::back::LSTM               back:LSTM(embedding)
-                clnet::back::DropOut            back:lstm_dropout2
-                clnet::back::Gradient           gradient(lstm_hidden2)[32,256]
-                clnet::back::LSTMCell           back:lstm_cell2
-                clnet::back::Gradient           gradient(lstm_cell2_FC_hidden)[32,1024]
-                clnet::back::BinaryOperator             back:lstm_cell2_FC_hidden+=lstm_cell2_FC_input
-                clnet::back::Gradient           gradient(lstm_cell2_FC_input)[32,1024]
-                clnet::back::FullyConnectedLayer                back:lstm_cell2_FC_input=lstm_weight_x2*lstm_hidden1+lstm_bias2
-                clnet::back::DropOut            back:lstm_dropout1
-                clnet::back::Gradient           gradient(lstm_hidden1)[32,256]
-                clnet::back::LSTMCell           back:lstm_cell1
-                clnet::back::Gradient           gradient(lstm_cell1_FC_hidden)[32,1024]
-                clnet::back::BinaryOperator             back:lstm_cell1_FC_hidden+=lstm_cell1_FC_input
-                clnet::back::Gradient           gradient(lstm_cell1_FC_input)[32,1024]
-                clnet::back::FullyConnectedLayer                back:lstm_cell1_FC_input=lstm_weight_x1*lstm_hidden0+lstm_bias1
-                clnet::back::DropOut            back:lstm_dropout0
-                clnet::back::Gradient           gradient(lstm_hidden0)[32,256]
-                clnet::back::LSTMCell           back:lstm_cell0
-                clnet::back::Gradient           gradient(lstm_cell0_FC_hidden)[32,1024]
-                clnet::back::BinaryOperator             back:lstm_cell0_FC_hidden+=lstm_cell0_FC_input
-                clnet::back::Gradient           gradient(lstm_cell0_FC_input)[32,1024]
-                clnet::back::FullyConnectedLayer                back:lstm_cell0_FC_input=lstm_weight_x0*lstm_input_timestep+lstm_bias0
-                clnet::back::FullyConnectedLayer                back:lstm_cell2_FC_hidden=lstm_weight_h2*lstm_hidden2
-                clnet::back::Gradient           gradient(lstm_weight_h2)[256,1024]
-                clnet::back::FullyConnectedLayer                back:lstm_cell1_FC_hidden=lstm_weight_h1*lstm_hidden1
-                clnet::back::Gradient           gradient(lstm_weight_h1)[256,1024]
-                clnet::back::FullyConnectedLayer                back:lstm_cell0_FC_hidden=lstm_weight_h0*lstm_hidden0
-                clnet::back::Gradient           gradient(lstm_weight_h0)[256,1024]
-                clnet::back::Gradient           gradient(lstm_weight_x0)[256,1024]
-                clnet::back::Gradient           gradient(lstm_bias0)[1024]
-                clnet::back::Gradient           gradient(lstm_weight_x1)[256,1024]
-                clnet::back::Gradient           gradient(lstm_bias1)[1024]
-                clnet::back::Gradient           gradient(lstm_weight_x2)[256,1024]
-                clnet::back::Gradient           gradient(lstm_bias2)[1024]
-                clnet::back::Gradient           gradient(lstm_input_timestep)[32,256]
--               clnet::back::Gradient           gradient(embedding)[32,129,256]
+-               clnet:\:back::Gradient           gradient(lstm_cell_state0)[32,256]
+                clnet:\:back::Gradient           gradient(lstm_hidden0)[32,256]
+                clnet:\:back::Gradient           gradient(lstm_cell_state1)[32,256]
+                clnet:\:back::Gradient           gradient(lstm_hidden1)[32,256]
+                clnet:\:back::Gradient           gradient(lstm_cell_state2)[32,256]
+                clnet:\:back::Gradient           gradient(lstm_hidden2)[32,256]
+        clnet:\:back::LSTM               back:LSTM(embedding)
+                clnet:\:back::DropOut            back:lstm_dropout2
+                clnet:\:back::Gradient           gradient(lstm_hidden2)[32,256]
+                clnet:\:back::LSTMCell           back:lstm_cell2
+                clnet:\:back::Gradient           gradient(lstm_cell2_FC_hidden)[32,1024]
+                clnet:\:back::BinaryOperator             back:lstm_cell2_FC_hidden+=lstm_cell2_FC_input
+                clnet:\:back::Gradient           gradient(lstm_cell2_FC_input)[32,1024]
+                clnet:\:back::FullyConnectedLayer                back:lstm_cell2_FC_input=lstm_weight_x2*lstm_hidden1+lstm_bias2
+                clnet:\:back::DropOut            back:lstm_dropout1
+                clnet:\:back::Gradient           gradient(lstm_hidden1)[32,256]
+                clnet:\:back::LSTMCell           back:lstm_cell1
+                clnet:\:back::Gradient           gradient(lstm_cell1_FC_hidden)[32,1024]
+                clnet:\:back::BinaryOperator             back:lstm_cell1_FC_hidden+=lstm_cell1_FC_input
+                clnet:\:back::Gradient           gradient(lstm_cell1_FC_input)[32,1024]
+                clnet:\:back::FullyConnectedLayer                back:lstm_cell1_FC_input=lstm_weight_x1*lstm_hidden0+lstm_bias1
+                clnet:\:back::DropOut            back:lstm_dropout0
+                clnet:\:back::Gradient           gradient(lstm_hidden0)[32,256]
+                clnet:\:back::LSTMCell           back:lstm_cell0
+                clnet:\:back::Gradient           gradient(lstm_cell0_FC_hidden)[32,1024]
+                clnet:\:back::BinaryOperator             back:lstm_cell0_FC_hidden+=lstm_cell0_FC_input
+                clnet:\:back::Gradient           gradient(lstm_cell0_FC_input)[32,1024]
+                clnet:\:back::FullyConnectedLayer                back:lstm_cell0_FC_input=lstm_weight_x0*lstm_input_timestep+lstm_bias0
+                clnet:\:back::FullyConnectedLayer                back:lstm_cell2_FC_hidden=lstm_weight_h2*lstm_hidden2
+                clnet:\:back::Gradient           gradient(lstm_weight_h2)[256,1024]
+                clnet:\:back::FullyConnectedLayer                back:lstm_cell1_FC_hidden=lstm_weight_h1*lstm_hidden1
+                clnet:\:back::Gradient           gradient(lstm_weight_h1)[256,1024]
+                clnet:\:back::FullyConnectedLayer                back:lstm_cell0_FC_hidden=lstm_weight_h0*lstm_hidden0
+                clnet:\:back::Gradient           gradient(lstm_weight_h0)[256,1024]
+                clnet:\:back::Gradient           gradient(lstm_weight_x0)[256,1024]
+                clnet:\:back::Gradient           gradient(lstm_bias0)[1024]
+                clnet:\:back::Gradient           gradient(lstm_weight_x1)[256,1024]
+                clnet:\:back::Gradient           gradient(lstm_bias1)[1024]
+                clnet:\:back::Gradient           gradient(lstm_weight_x2)[256,1024]
+                clnet:\:back::Gradient           gradient(lstm_bias2)[1024]
+                clnet:\:back::Gradient           gradient(lstm_input_timestep)[32,256]
+-               clnet:\:back::Gradient           gradient(embedding)[32,129,256]
                 clnet::Tensor           lstm_runtime_cell_no[3]
-        clnet::back::Gradient           gradient(embedding)[32,129,256]
-        clnet::back::Embedding          back:Embedding(data)
-        clnet::back::Gradient           gradient(embedding_matrix)[84,256]
-        clnet::back::Gradient           gradient(class_weight)[256,84]
-        clnet::back::Gradient           gradient(class_bias)[84]
+        clnet:\:back::Gradient           gradient(embedding)[32,129,256]
+        clnet:\:back::Embedding          back:Embedding(data)
+        clnet:\:back::Gradient           gradient(embedding_matrix)[84,256]
+        clnet:\:back::Gradient           gradient(class_weight)[256,84]
+        clnet:\:back::Gradient           gradient(class_bias)[84]
         clnet::type::StochasticGradientDescentUpdater           SGD
 -               clnet::type::Weight             embedding_matrix[84,256]
                 clnet::type::Weight             lstm_weight_h0[256,1024]
@@ -400,28 +414,28 @@ clnet::type::IterativeOptimizer         IterativeOptimizer[4]
         clnet::type::FullyConnectedLayer                inference=inference_weight*feature+inference_bias
         clnet::type::Output             inference[32,10]
         clnet::Tensor           train_images_label[32]
-        clnet::back::Loss               negative_log_likelihood(softmax(inference),train_images_label)
-        clnet::back::Gradient           gradient(inference)[32,10]
-        clnet::back::FullyConnectedLayer                back:inference=inference_weight*feature+inference_bias
-        clnet::back::Gradient           gradient(feature)[32,480]
-        clnet::back::FullyConnectedLayer                back:feature=tanh(feature_weight*reshape+feature_bias)
-        clnet::back::Reshape            gradient(reshape)[32,2450]
-        clnet::back::Gradient           gradient(pool2)[32,7,7,50]
-        clnet::back::Pooling            back:pool2=Pooling(conv2,max)
-        clnet::back::Gradient           gradient(conv2)[32,14,14,50]
-        clnet::back::ConvolutionKernel          back:conv2=Convolution:5x5(pool1,tanh)
-        clnet::back::Gradient           gradient(pool1)[32,14,14,20]
-        clnet::back::Pooling            back:pool1=Pooling(conv1,max)
-        clnet::back::Gradient           gradient(conv1)[32,28,28,20]
-        clnet::back::ConvolutionKernel          back:conv1=Convolution:5x5(train_images_data,tanh)
-        clnet::back::Gradient           gradient(conv1_weight)[20,5,5,1]
-        clnet::back::Gradient           gradient(conv1_bias)[20]
-        clnet::back::Gradient           gradient(conv2_weight)[50,5,5,20]
-        clnet::back::Gradient           gradient(conv2_bias)[50]
-        clnet::back::Gradient           gradient(feature_weight)[2450,480]
-        clnet::back::Gradient           gradient(feature_bias)[2450]
-        clnet::back::Gradient           gradient(inference_weight)[480,10]
-        clnet::back::Gradient           gradient(inference_bias)[480]
+        clnet:\:back::Loss               negative_log_likelihood(softmax(inference),train_images_label)
+        clnet:\:back::Gradient           gradient(inference)[32,10]
+        clnet:\:back::FullyConnectedLayer                back:inference=inference_weight*feature+inference_bias
+        clnet:\:back::Gradient           gradient(feature)[32,480]
+        clnet:\:back::FullyConnectedLayer                back:feature=tanh(feature_weight*reshape+feature_bias)
+        clnet:\:back::Reshape            gradient(reshape)[32,2450]
+        clnet:\:back::Gradient           gradient(pool2)[32,7,7,50]
+        clnet:\:back::Pooling            back:pool2=Pooling(conv2,max)
+        clnet:\:back::Gradient           gradient(conv2)[32,14,14,50]
+        clnet:\:back::ConvolutionKernel          back:conv2=Convolution:5x5(pool1,tanh)
+        clnet:\:back::Gradient           gradient(pool1)[32,14,14,20]
+        clnet:\:back::Pooling            back:pool1=Pooling(conv1,max)
+        clnet:\:back::Gradient           gradient(conv1)[32,28,28,20]
+        clnet:\:back::ConvolutionKernel          back:conv1=Convolution:5x5(train_images_data,tanh)
+        clnet:\:back::Gradient           gradient(conv1_weight)[20,5,5,1]
+        clnet:\:back::Gradient           gradient(conv1_bias)[20]
+        clnet:\:back::Gradient           gradient(conv2_weight)[50,5,5,20]
+        clnet:\:back::Gradient           gradient(conv2_bias)[50]
+        clnet:\:back::Gradient           gradient(feature_weight)[2450,480]
+        clnet:\:back::Gradient           gradient(feature_bias)[2450]
+        clnet:\:back::Gradient           gradient(inference_weight)[480,10]
+        clnet:\:back::Gradient           gradient(inference_bias)[480]
         clnet::type::StochasticGradientDescentUpdater           SGD
 -               clnet::type::Weight             conv1_weight[20,5,5,1]
                 clnet::type::Bias               conv1_bias[20]
