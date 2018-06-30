@@ -30,9 +30,9 @@ charRNN：
 obama.txt可从[http://data.mxnet.io/mxnet/data/char_lstm.zip](http://data.mxnet.io/mxnet/data/char_lstm.zip)下载。  
 MNIST CNN：  
 ```
-.\Release\OpenCLNet.exe MNIST\_CNN /ds :mnist_folder D:\DataSets\MNIST\
+.\Release\OpenCLNet.exe MNIST_CNN /ds :mnist_folder D:\DataSets\MNIST\
 ```  
-D:/DataSets/下需包含MNIST数据集文件train-images.idx3-ubyte，train-labels.idx1-ubyte，t10k-images.idx3-ubyte，t10k-labels.idx1-ubyte。可从[http://yann.lecun.com/exdb/mnist/](http://yann.lecun.com/exdb/mnist/)下载
+D:/DataSets/下需包含MNIST数据集文件train-images.idx3-ubyte，train-labels.idx1-ubyte，t10k-images.idx3-ubyte，t10k-labels.idx1-ubyte。可从[http://yann.lecun.com/exdb/mnist/](http://yann.lecun.com/exdb/mnist/)下载。目录名末尾请加上路径分隔符。
 
 如何调试：  
 “/ds”生成执行树，“/ss”执行到第一个Tensor，停留，等待交互命令：  
