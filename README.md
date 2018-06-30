@@ -24,12 +24,18 @@ Kernel性能尚待进一步优化（矩阵乘法gemm及小卷积核FFT优化算�
 
 演示例子运行命令行：  
 全连接MLP：  
-.\Release\OpenCLNet.exe MLP /ds /0  
-charRNN：  
-.\Release\OpenCLNet.exe charRNN /ds /0 :corpus\_file D:\DataSets\charRNN\obama.txt :index\_file D:\DataSets\charRNN\obama.index  
+```
+.\Release\OpenCLNet.exe MLP /ds /0
+```  
+charRNN：
+```  
+.\Release\OpenCLNet.exe charRNN /ds /0 :corpus\_file D:\DataSets\charRNN\obama.txt :index\_file D:\DataSets\charRNN\obama.index
+```  
 obama.txt可从[http://data.mxnet.io/mxnet/data/char_lstm.zip](http://data.mxnet.io/mxnet/data/char_lstm.zip)下载。  
 MNIST CNN：  
-.\Release\OpenCLNet.exe MNIST\_CNN /ds /0  :mnist\_folder D:\DataSets\MNIST\  
+```
+.\Release\OpenCLNet.exe MNIST\_CNN /ds /0  :mnist\_folder D:\DataSets\MNIST\
+```  
 D:/DataSets/下需包含MNIST数据集文件train-images.idx3-ubyte，train-labels.idx1-ubyte，t10k-images.idx3-ubyte，t10k-labels.idx1-ubyte。可从[http://yann.lecun.com/exdb/mnist/](http://yann.lecun.com/exdb/mnist/)下载
 
 如何调试：  
@@ -79,6 +85,7 @@ g SGD
 ```  
 [debugger] device 1 continue to run.  
 [debugger] device 1 break on SGD: clnet::type::StochasticGradientDescentUpdater  
+观察输入样本X（别名为X的Tensor）：  
 ```
 d X  
 ```
