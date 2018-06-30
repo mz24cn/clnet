@@ -359,3 +359,136 @@ clnet::type::IterativeOptimizer         IterativeOptimizer[4]
 [debugger] interactive thread started on device 1.
 [debugger] device 1 break on IterativeOptimizer: clnet::type::IterativeOptimizer
 </pre>
+
+使用0.0002的学习率，标准的SGD更新（无weight decay，无冲量），运行Lenet-5，可以在第一个epoch达到97%的测试集准确率。测试集准确率最高99.19%。  
+<pre>
+clnet::type::XavierNormalDistributionInitializer                XavierNormalDistributionInitializer
+-       clnet::type::Weight             conv1_weight[20,5,5,1]
+        clnet::type::Bias               conv1_bias[20]
+        clnet::type::Weight             conv2_weight[50,5,5,20]
+        clnet::type::Bias               conv2_bias[50]
+        clnet::type::Weight             feature_weight[2450,480]
+        clnet::type::Bias               feature_bias[2450]
+        clnet::type::Weight             inference_weight[480,10]
+        clnet::type::Bias               inference_bias[480]
+clnet::type::IterativeOptimizer         IterativeOptimizer[4]
+        MNISTImageIterator              [60001]
+-               clnet::Tensor           train_images[60000,28,28]
+                clnet::Tensor           train_labels[60000]
+                clnet::Tensor           test_images[10016,28,28]
+                clnet::Tensor           test_labels[10016]
+        clnet::Tensor           train_images_data[32,28,28,1]
+        clnet::type::Weight             conv1_weight[20,5,5,1]
+        clnet::type::Bias               conv1_bias[20]
+        clnet::type::ConvolutionKernel          conv1=Convolution:5x5(train_images_data,tanh)
+        clnet::type::Output             conv1[32,28,28,20]
+        clnet::type::Pooling            pool1=Pooling(conv1,max)
+        clnet::type::Output             pool1[32,14,14,20]
+        clnet::type::Weight             conv2_weight[50,5,5,20]
+        clnet::type::Bias               conv2_bias[50]
+        clnet::type::ConvolutionKernel          conv2=Convolution:5x5(pool1,tanh)
+        clnet::type::Output             conv2[32,14,14,50]
+        clnet::type::Pooling            pool2=Pooling(conv2,max)
+        clnet::type::Output             pool2[32,7,7,50]
+        clnet::type::Reshape            reshape[32,2450]
+        clnet::type::Weight             feature_weight[2450,480]
+        clnet::type::Bias               feature_bias[2450]
+        clnet::type::FullyConnectedLayer                feature=tanh(feature_weight*reshape+feature_bias)
+        clnet::type::Output             feature[32,480]
+        clnet::type::Weight             inference_weight[480,10]
+        clnet::type::Bias               inference_bias[480]
+        clnet::type::FullyConnectedLayer                inference=inference_weight*feature+inference_bias
+        clnet::type::Output             inference[32,10]
+        clnet::Tensor           train_images_label[32]
+        clnet::back::Loss               negative_log_likelihood(softmax(inference),train_images_label)
+        clnet::back::Gradient           gradient(inference)[32,10]
+        clnet::back::FullyConnectedLayer                back:inference=inference_weight*feature+inference_bias
+        clnet::back::Gradient           gradient(feature)[32,480]
+        clnet::back::FullyConnectedLayer                back:feature=tanh(feature_weight*reshape+feature_bias)
+        clnet::back::Reshape            gradient(reshape)[32,2450]
+        clnet::back::Gradient           gradient(pool2)[32,7,7,50]
+        clnet::back::Pooling            back:pool2=Pooling(conv2,max)
+        clnet::back::Gradient           gradient(conv2)[32,14,14,50]
+        clnet::back::ConvolutionKernel          back:conv2=Convolution:5x5(pool1,tanh)
+        clnet::back::Gradient           gradient(pool1)[32,14,14,20]
+        clnet::back::Pooling            back:pool1=Pooling(conv1,max)
+        clnet::back::Gradient           gradient(conv1)[32,28,28,20]
+        clnet::back::ConvolutionKernel          back:conv1=Convolution:5x5(train_images_data,tanh)
+        clnet::back::Gradient           gradient(conv1_weight)[20,5,5,1]
+        clnet::back::Gradient           gradient(conv1_bias)[20]
+        clnet::back::Gradient           gradient(conv2_weight)[50,5,5,20]
+        clnet::back::Gradient           gradient(conv2_bias)[50]
+        clnet::back::Gradient           gradient(feature_weight)[2450,480]
+        clnet::back::Gradient           gradient(feature_bias)[2450]
+        clnet::back::Gradient           gradient(inference_weight)[480,10]
+        clnet::back::Gradient           gradient(inference_bias)[480]
+        clnet::type::StochasticGradientDescentUpdater           SGD
+-               clnet::type::Weight             conv1_weight[20,5,5,1]
+                clnet::type::Bias               conv1_bias[20]
+                clnet::type::Weight             conv2_weight[50,5,5,20]
+                clnet::type::Bias               conv2_bias[50]
+                clnet::type::Weight             feature_weight[2450,480]
+                clnet::type::Bias               feature_bias[2450]
+                clnet::type::Weight             inference_weight[480,10]
+                clnet::type::Bias               inference_bias[480]
+-       clnet::InstantTensor            MNIST_CNN_monitor
+        clnet::InstantTensor            MNIST_CNN_validator
+                MNISTImageIterator              [60001]
+-                       clnet::Tensor           train_images[60000,28,28]
+                        clnet::Tensor           train_labels[60000]
+                        clnet::Tensor           test_images[10016,28,28]
+                        clnet::Tensor           test_labels[10016]
+                clnet::Tensor           train_images_data[32,28,28,1]
+                clnet::type::Weight             conv1_weight[20,5,5,1]
+                clnet::type::Bias               conv1_bias[20]
+                clnet::type::ConvolutionKernel          conv1=Convolution:5x5(train_images_data,tanh)
+                clnet::type::Output             conv1[32,28,28,20]
+                clnet::type::Pooling            pool1=Pooling(conv1,max)
+                clnet::type::Output             pool1[32,14,14,20]
+                clnet::type::Weight             conv2_weight[50,5,5,20]
+                clnet::type::Bias               conv2_bias[50]
+                clnet::type::ConvolutionKernel          conv2=Convolution:5x5(pool1,tanh)
+                clnet::type::Output             conv2[32,14,14,50]
+                clnet::type::Pooling            pool2=Pooling(conv2,max)
+                clnet::type::Output             pool2[32,7,7,50]
+                clnet::type::Reshape            reshape[32,2450]
+                clnet::type::Weight             feature_weight[2450,480]
+                clnet::type::Bias               feature_bias[2450]
+                clnet::type::FullyConnectedLayer                feature=tanh(feature_weight*reshape+feature_bias)
+                clnet::type::Output             feature[32,480]
+                clnet::type::Weight             inference_weight[480,10]
+                clnet::type::Bias               inference_bias[480]
+                clnet::type::FullyConnectedLayer                inference=inference_weight*feature+inference_bias
+                clnet::type::Output             inference[32,10]
+
+[0,@2018-06-30 20:12:44] GeForce GTX 1080 Ti (kernels build: 190ms)
+[debugger] interactive thread started on device 0.
+[0,0,28153ms] train accuracy: 0.976492  test set accuracy: 97.08%
+[0,1,1999.400146/s] train accuracy: 0.961088    test set accuracy: 97.79%
+[0,2,1977.066040/s] train accuracy: 0.969694    test set accuracy: 98.26%
+[0,3,1977.131226/s] train accuracy: 0.975035    test set accuracy: 98.5%
+[0,4,1975.308594/s] train accuracy: 0.996367    test set accuracy: 98.62%
+[0,5,1974.333618/s] train accuracy: 0.836167    test set accuracy: 98.43%
+[0,6,1973.879028/s] train accuracy: 0.885966    test set accuracy: 98.78%
+[0,7,1973.359619/s] train accuracy: 0.87724     test set accuracy: 98.66%
+[0,8,1973.943970/s] train accuracy: 0.994898    test set accuracy: 98.71%
+[0,9,1973.489502/s] train accuracy: 0.975384    test set accuracy: 98.73%
+[0,10,1973.554321/s] train accuracy: 0.987039   test set accuracy: 98.87%
+[0,11,1973.424561/s] train accuracy: 0.989917   test set accuracy: 98.8%
+[0,12,1969.925781/s] train accuracy: 0.971296   test set accuracy: 98.82%
+[0,13,1965.280029/s] train accuracy: 0.97529    test set accuracy: 98.98%
+[0,14,1965.280029/s] train accuracy: 0.996434   test set accuracy: 99.01%
+[0,15,1965.215698/s] train accuracy: 0.989955   test set accuracy: 98.93%
+[0,16,1965.022583/s] train accuracy: 0.994556   test set accuracy: 99.05%
+[0,17,1965.151367/s] train accuracy: 0.995275   test set accuracy: 99.03%
+[0,18,1965.022583/s] train accuracy: 0.977169   test set accuracy: 98.96%
+[0,19,1964.765259/s] train accuracy: 0.992683   test set accuracy: 99.05%
+[0,20,1965.086914/s] train accuracy: 0.994362   test set accuracy: 98.93%
+[0,21,1964.700928/s] train accuracy: 0.959518   test set accuracy: 98.96%
+[0,22,1964.893921/s] train accuracy: 0.993861   test set accuracy: 98.92%
+[0,23,1965.151367/s] train accuracy: 0.970596   test set accuracy: 99.06%
+[0,24,1964.958252/s] train accuracy: 0.981751   test set accuracy: 98.95%
+[0,25,1964.636597/s] train accuracy: 0.997321   test set accuracy: 99%
+[0,26,1964.829590/s] train accuracy: 0.995127   test set accuracy: 99.11%
+[0,27,1964.572266/s] train accuracy: 0.998763   test set accuracy: 99.15%
+</pre>
