@@ -39,10 +39,11 @@ MNIST CNN：
 D:/DataSets/下需包含MNIST数据集文件train-images.idx3-ubyte，train-labels.idx1-ubyte，t10k-images.idx3-ubyte，t10k-labels.idx1-ubyte。可从[http://yann.lecun.com/exdb/mnist/](http://yann.lecun.com/exdb/mnist/)下载
 
 如何调试：  
-执行到第一个Tensor，停留，等待交互命令：  
+“/ds”生成执行树，“/ss”执行到第一个Tensor，停留，等待交互命令：  
 ```
 .\Release\OpenCLNet.exe MLP /ss /ds /0  
 ```
+<pre>
 clnet::type::XavierNormalDistributionInitializer                XavierNormalDistributionInitializer  
 --       clnet::type::Weight             l0_weight[2,4096]  
                 clnet::type::Bias               l0_bias[4096]  
@@ -79,6 +80,7 @@ clnet::type::IterativeOptimizer         IterativeOptimizer[4]
 [1,@2018-06-30 14:06:21] GeForce GTX 1050 Ti (kernels build: 635ms)  
 [debugger] interactive thread started on device 1.  
 [debugger] device 1 break on IterativeOptimizer: clnet::type::IterativeOptimizer  
+</pre>
 执行到SGD（别名为SGD的Tensor）：  
 ```
 g SGD
@@ -165,6 +167,53 @@ SGD.learning_rate *= 0.5
 [debugger] SGD.learning_rate = 1e-005  
 [debugger] SGD.learning_rate *= 0.5  
 [debugger] SGD.learning_rate = 5e-006  
+执行profile，性能调优：  
+```
+pf
+```
+[debugger] profile mode activated.  
+```
+g
+```
+[debugger] breakpoint removed.  
+```
+c
+```
+[debugger] device 1 continue to run.  
+[1,0,4ms] error rate: 0.331467  
+[1,2000,39006/s] error rate: 0.00325364  
+[1,4000,39072/s] error rate: 0.00251041  
+```
+p
+```
+[debugger] breakpoint added on SGD.  
+[debugger] device 1 break on SGD: clnet::type::StochasticGradientDescentUpdater  
+```
+pf list
+```
+back:FCLayer_1=softrelu(l1_weight*FCLayer_0+l1_bias): clnet::back::FullyConnectedLayer:              3s.271ms/20%  
+FCLayer_1=softrelu(l1_weight*FCLayer_0+l1_bias): clnet::type::FullyConnectedLayer:              3s.87ms/19%  
+back:FCLayer_0=sigmoid(l0_weight*X+l0_bias): clnet::back::FullyConnectedLayer:          923ms/5%  
+SGD: clnet::type::StochasticGradientDescentUpdater:             872ms/5%  
+FCLayer_0=sigmoid(l0_weight*X+l0_bias): clnet::type::FullyConnectedLayer:               854ms/5%  
+X: clnet::type::Data:           805ms/4%  
+linear_regression(FCLayer_1,Y): clnet::back::Loss:              641ms/3%  
+Y: clnet::type::Data:           593ms/3%  
+data_generator: clnet::InstantTensor:           507ms/3%  
+MLPMonitor: clnet::InstantTensor:               455ms/2%  
+gradient(FCLayer_0): clnet::back::Gradient:             440ms/2%  
+l0_bias: clnet::type::Bias:             397ms/2%  
+l0_weight: clnet::type::Weight:                 395ms/2%  
+gradient(FCLayer_1): clnet::back::Gradient:             363ms/2%  
+FCLayer_1: clnet::type::Output:                 355ms/2%  
+l1_bias: clnet::type::Bias:             347ms/2%  
+gradient(l0_weight): clnet::back::Gradient:             335ms/2%  
+FCLayer_0: clnet::type::Output:                 334ms/2%  
+gradient(l0_bias): clnet::back::Gradient:               324ms/2%  
+l1_weight: clnet::type::Weight:                 289ms/1%  
+gradient(l1_bias): clnet::back::Gradient:               287ms/1%  
+gradient(l1_weight): clnet::back::Gradient:             278ms/1%  
+
 
 I'm working hard for **clNET** official release!
 -
