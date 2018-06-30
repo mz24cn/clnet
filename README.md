@@ -24,13 +24,93 @@ Kernel性能尚待进一步优化（矩阵乘法gemm及小卷积核FFT优化算�
 
 演示例子运行命令行：  
 全连接MLP：  
-.\OpenCLNet.exe MLP /ds /[0] /nf  
+.\Release\OpenCLNet.exe MLP /ds /0  
 charRNN：  
-.\OpenCLNet.exe charRNN /nf /ds /[0] :corpus\_file D:\DataSets\charRNN\obama.txt :index\_file D:\DataSets\charRNN\obama.index  
+.\Release\OpenCLNet.exe charRNN /ds /0 :corpus\_file D:\DataSets\charRNN\obama.txt :index\_file D:\DataSets\charRNN\obama.index  
 obama.txt可从[http://data.mxnet.io/mxnet/data/char_lstm.zip](http://data.mxnet.io/mxnet/data/char_lstm.zip)下载。  
 MNIST CNN：  
-.\OpenCLNet.exe MNIST\_CNN /ds /nf /[0]  :mnist\_folder D:\DataSets\MNIST\  
+.\Release\OpenCLNet.exe MNIST\_CNN /ds /0  :mnist\_folder D:\DataSets\MNIST\  
 D:/DataSets/下需包含MNIST数据集文件train-images.idx3-ubyte，train-labels.idx1-ubyte，t10k-images.idx3-ubyte，t10k-labels.idx1-ubyte。可从[http://yann.lecun.com/exdb/mnist/](http://yann.lecun.com/exdb/mnist/)下载
+
+如何调试：  
+执行到第一个Tensor，停留，等待交互命令：  
+```
+.\Release\OpenCLNet.exe MLP /ss /ds /0  
+```
+clnet::type::XavierNormalDistributionInitializer                XavierNormalDistributionInitializer  
+-       clnet::type::Weight             l0_weight[2,4096]  
+                clnet::type::Bias               l0_bias[4096]  
+                clnet::type::Weight             l1_weight[4096,1]  
+                clnet::type::Bias               l1_bias[1]  
+clnet::type::IterativeOptimizer         IterativeOptimizer[4]  
+                clnet::InstantTensor            data_generator  
+                clnet::type::Data               X[128,2]  
+                clnet::type::Weight             l0_weight[2,4096]  
+                clnet::type::Bias               l0_bias[4096]  
+                clnet::type::FullyConnectedLayer                FCLayer_0=sigmoid(l0_weight*X+l0_bias)  
+                clnet::type::Output             FCLayer_0[128,4096]  
+                clnet::type::Weight             l1_weight[4096,1]  
+                clnet::type::Bias               l1_bias[1]  
+                clnet::type::FullyConnectedLayer                FCLayer_1=softrelu(l1_weight*FCLayer_0+l1_bias)  
+                clnet::type::Output             FCLayer_1[128,1]  
+                clnet::type::Data               Y[128]  
+                clnet::back::Loss               linear_regression(FCLayer_1,Y)  
+                clnet::back::Gradient           gradient(FCLayer_1)[128,1]  
+                clnet::back::FullyConnectedLayer                back:FCLayer_1=softrelu(l1_weight*FCLayer_0+l1_bias)  
+                clnet::back::Gradient           gradient(FCLayer_0)[128,4096]  
+                clnet::back::FullyConnectedLayer                back:FCLayer_0=sigmoid(l0_weight*X+l0_bias)  
+                clnet::back::Gradient           gradient(l0_weight)[2,4096]  
+                clnet::back::Gradient           gradient(l0_bias)[4096]  
+                clnet::back::Gradient           gradient(l1_weight)[4096,1]  
+                clnet::back::Gradient           gradient(l1_bias)[1]  
+                clnet::type::StochasticGradientDescentUpdater           SGD  
+-       clnet::type::Weight             l0_weight[2,4096]  
+                                clnet::type::Bias               l0_bias[4096]  
+                                clnet::type::Weight             l1_weight[4096,1]  
+                                clnet::type::Bias               l1_bias[1]  
+-       clnet::InstantTensor            MLPMonitor  
+
+[1,@2018-06-30 14:06:21] GeForce GTX 1050 Ti (kernels build: 635ms)  
+[debugger] interactive thread started on device 1.  
+[debugger] device 1 break on IterativeOptimizer: clnet::type::IterativeOptimizer  
+执行到SGD（别名为SGD的Tensor）：  
+```
+g SGD
+```  
+[debugger] device 1 continue to run.  
+[debugger] device 1 break on SGD: clnet::type::StochasticGradientDescentUpdater  
+```
+d X  
+```
+        this:                   0xfa1e60  
+        type:                   clnet::type::Data  
+        alias:                  X  
+        volume:                 256  
+        dimensions:             [128,2]  
+        size:                   1024 bytes  
+        pointer:                0xe7aac0  
+        gradient:               NULL  
+        inputs:  
+                data_generator[]: clnet::InstantTensor  
+        peers:  
+                FCLayer_0=sigmoid(l0_weight*X+l0_bias)[]: clnet::type::FullyConnectedLayer  
+```
+X  
+```
+X[128,2]: clnet::type::Data  
+0  
+0:      1.00375,2.69076  
+1:      1.57991,3.42622  
+2:      2.75503,2.43962  
+3:      2.05087,3.68789  
+4:      3.46852,3.23981  
+5:      1.52232,3.57683  
+6:      3.1315,2.5406  
+7:      1.91198,1.04495  
+8:      1.27421,2.09336  
+9:      1.44194,1.4977  
+ ...  
+
 
 I'm working hard for **clNET** official release!
 -
