@@ -44,7 +44,7 @@ D:/DataSets/下需包含MNIST数据集文件train-images.idx3-ubyte，train-labe
 .\Release\OpenCLNet.exe MLP /ss /ds /0  
 ```
 clnet::type::XavierNormalDistributionInitializer                XavierNormalDistributionInitializer  
--       clnet::type::Weight             l0_weight[2,4096]  
+--       clnet::type::Weight             l0_weight[2,4096]  
                 clnet::type::Bias               l0_bias[4096]  
                 clnet::type::Weight             l1_weight[4096,1]  
                 clnet::type::Bias               l1_bias[1]  
@@ -70,11 +70,11 @@ clnet::type::IterativeOptimizer         IterativeOptimizer[4]
                 clnet::back::Gradient           gradient(l1_weight)[4096,1]  
                 clnet::back::Gradient           gradient(l1_bias)[1]  
                 clnet::type::StochasticGradientDescentUpdater           SGD  
--       clnet::type::Weight             l0_weight[2,4096]  
+--       clnet::type::Weight             l0_weight[2,4096]  
                                 clnet::type::Bias               l0_bias[4096]  
                                 clnet::type::Weight             l1_weight[4096,1]  
                                 clnet::type::Bias               l1_bias[1]  
--       clnet::InstantTensor            MLPMonitor  
+--       clnet::InstantTensor            MLPMonitor  
 
 [1,@2018-06-30 14:06:21] GeForce GTX 1050 Ti (kernels build: 635ms)  
 [debugger] interactive thread started on device 1.  
@@ -124,21 +124,21 @@ gradient(l0_weight)
 gradient(l0_weight)[2,4096]: clnet::back::Gradient
 0
 0:      0.0932272,-0.00103467,0.616816,0.0487299,0.108153,0.453982,-0.168111,0.00612603,0.0466066,0.0776809,0.480914,0.00167271,-0.0579107,-0.171267,-0.00544866,0.0305377,0.396773,-0.0364095,-0.0105135,-0.244325,0.0070936,-0.0271294,0.0982886,0.000907668,0.0083473,0.000168261,0.038511,-0.00443278,-0.141771,-0.000452508,0.0574187,0.59741,-0.0461692,0.0273872,0.0211383,0.0937608,-0.0543251,-0.0177396,0.0404992,0.244961 ...
-1:      0.043596,-0.105236,0.252182,0.0135588,0.0468406,0.208793,-0.0282288,0.0436221,0.0046685,0.0364535,0.231056,0.0131293,-0.0219158,-0.0984129,-0.000470661,0.010817,0.0848113,-0.00210151,-0.00500153,-0.113508,0.00290996,-0.00091675,-0.0437556,0.000426235,0.0348718,6.88916e-005,0.011789,-0.0166271,-0.046225,-0.000272511,0.0210079,0.22276,-0.0209225,0.0109369,0.00923857,0.0413359,0.0153701,0.0267138,0.0193877,0.177686 ...
+1:      0.043596,-0.105236,0.252182,0.0135588,0.0468406,0.208793,-0.0282288,0.0436221,0.0046685,0.0364535,0.231056,0.0131293,-0.0219158,-0.0984129,-0.000470661,0.010817,0.0848113,-0.00210151,-0.00500153,-0.113508,0.00290996,-0.00091675,-0.0437556,0.000426235,0.0348718,6.88916e-005,0.011789,-0.0166271,-0.046225,-0.000272511,0.0210079,0.22276,-0.0209225,0.0109369,0.00923857,0.0413359,0.0153701,0.0267138,0.0193877,0.177686 ...  
 只看 部分数据：  
 ```
 gradient(l0_weight)[:,0:8]
 ```
 data[0:2/2,0:8/4096] for gradient(l0_weight)[2,4096]: clnet::back::Gradient
 0:      0.0932272,-0.00103467,0.616816,0.0487299,0.108153,0.453982,-0.168111,0.00612603
-1:      0.043596,-0.105236,0.252182,0.0135588,0.0468406,0.208793,-0.0282288,0.0436221
-单步模式，执行完SGD，观察参数的变化：  
+1:      0.043596,-0.105236,0.252182,0.0135588,0.0468406,0.208793,-0.0282288,0.0436221  
 ```
 l0_weight[:,0:8]
 ```
 data[0:2/2,0:8/4096] for l0_weight[2,4096]: clnet::type::Weight  
 0:      -0.280252,-1.62137,0.129004,0.495599,0.42723,0.0478061,-0.688217,1.87265  
 1:      1.73239,0.18904,-0.326688,0.204418,-2.56337,-0.718758,-0.185233,-0.827314  
+单步模式，执行完SGD，观察参数的变化：  
 ```
 s
 ```
@@ -162,9 +162,9 @@ SGD.learning_rate
 ```
 SGD.learning_rate *= 0.5
 ```
-[debugger] SGD.learning_rate = 1e-005
-[debugger] SGD.learning_rate *= 0.5
-[debugger] SGD.learning_rate = 5e-006
+[debugger] SGD.learning_rate = 1e-005  
+[debugger] SGD.learning_rate *= 0.5  
+[debugger] SGD.learning_rate = 5e-006  
 
 I'm working hard for **clNET** official release!
 -
