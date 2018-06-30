@@ -9,7 +9,6 @@ Progress: Currently clnet can successfully run fully connected neural networks (
 Tested on Nvidia GTX1080, AMD R9 295X2, Intel HD Graphics 630 GPU.  
 Support multiple devices training.
 
-当前状态：尚未正式发布，即将发布。
 -
 已完成进度：
 可成功运行MLP全连接多层感知器，CharRNN（LSTM，基于动态计算图的循环实现），CNN（LeNet5，MNIST）的训练及推断。  
@@ -363,6 +362,3 @@ clnet::type::IterativeOptimizer         IterativeOptimizer[4]
 [debugger] interactive thread started on device 1.
 [debugger] device 1 break on IterativeOptimizer: clnet::type::IterativeOptimizer
 </pre>
-
-I'm working hard for **clNET** official release!
--
