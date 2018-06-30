@@ -25,16 +25,16 @@ Kernel性能尚待进一步优化（矩阵乘法gemm及小卷积核FFT优化算�
 演示例子运行命令行：  
 全连接MLP：  
 ```
-.\Release\OpenCLNet.exe MLP /ds /0
+.\Release\OpenCLNet.exe MLP /ds
 ```  
 charRNN：
 ```  
-.\Release\OpenCLNet.exe charRNN /ds /0 :corpus\_file D:\DataSets\charRNN\obama.txt :index\_file D:\DataSets\charRNN\obama.index
+.\Release\OpenCLNet.exe charRNN /ds :corpus_file D:\DataSets\charRNN\obama.txt :index_file D:\DataSets\charRNN\obama.index
 ```  
 obama.txt可从[http://data.mxnet.io/mxnet/data/char_lstm.zip](http://data.mxnet.io/mxnet/data/char_lstm.zip)下载。  
 MNIST CNN：  
 ```
-.\Release\OpenCLNet.exe MNIST\_CNN /ds /0  :mnist\_folder D:\DataSets\MNIST\
+.\Release\OpenCLNet.exe MNIST\_CNN /ds :mnist_folder D:\DataSets\MNIST\
 ```  
 D:/DataSets/下需包含MNIST数据集文件train-images.idx3-ubyte，train-labels.idx1-ubyte，t10k-images.idx3-ubyte，t10k-labels.idx1-ubyte。可从[http://yann.lecun.com/exdb/mnist/](http://yann.lecun.com/exdb/mnist/)下载
 
@@ -191,6 +191,7 @@ p
 ```
 pf list
 ```
+<pre>
 back:FCLayer_1=softrelu(l1_weight*FCLayer_0+l1_bias): clnet::back::FullyConnectedLayer:              3s.271ms/20%  
 FCLayer_1=softrelu(l1_weight*FCLayer_0+l1_bias): clnet::type::FullyConnectedLayer:              3s.87ms/19%  
 back:FCLayer_0=sigmoid(l0_weight*X+l0_bias): clnet::back::FullyConnectedLayer:          923ms/5%  
@@ -213,7 +214,155 @@ gradient(l0_bias): clnet::back::Gradient:               324ms/2%
 l1_weight: clnet::type::Weight:                 289ms/1%  
 gradient(l1_bias): clnet::back::Gradient:               287ms/1%  
 gradient(l1_weight): clnet::back::Gradient:             278ms/1%  
+</pre>
+使用动态执行图，在执行“不等长”的数据如RNN-LSTM上，有性能优势：  
+```
+.\Release\OpenCLNet.exe charRNN /ds /0 :corpus_file D:\DataSets\charRNN\obama.txt :index_file D:\DataSets\charRNN\obama.index
+```  
+<pre>
+clnet::type::XavierNormalDistributionInitializer                XavierNormalDistributionInitializer
+-       clnet::type::Weight             embedding_matrix[84,256]
+        clnet::type::Weight             lstm_weight_h0[256,1024]
+        clnet::type::Weight             lstm_weight_x0[256,1024]
+        clnet::type::Bias               lstm_bias0[1024]
+        clnet::type::Weight             lstm_weight_h1[256,1024]
+        clnet::type::Weight             lstm_weight_x1[256,1024]
+        clnet::type::Bias               lstm_bias1[1024]
+        clnet::type::Weight             lstm_weight_h2[256,1024]
+        clnet::type::Weight             lstm_weight_x2[256,1024]
+        clnet::type::Bias               lstm_bias2[1024]
+        clnet::type::Weight             class_weight[256,84]
+        clnet::type::Bias               class_bias[84]
+clnet::type::IterativeOptimizer         IterativeOptimizer[4]
+        SentenceIterator                [8289]
+        clnet::type::Data               data[32,129]
+        clnet::type::Weight             embedding_matrix[84,256]
+        clnet::type::Embedding          Embedding(data)
+        clnet::type::Output             embedding[32,129,256]
+        clnet::type::LSTMInitializer            lstm_initializer
+-               clnet::type::Output             lstm_cell_state0[32,256]
+                clnet::type::Output             lstm_hidden0[32,256]
+                clnet::type::Output             lstm_cell_state1[32,256]
+                clnet::type::Output             lstm_hidden1[32,256]
+                clnet::type::Output             lstm_cell_state2[32,256]
+                clnet::type::Output             lstm_hidden2[32,256]
+        clnet::type::LSTM               LSTM(embedding)
+                clnet::type::Weight             lstm_weight_h2[256,1024]
+                clnet::type::FullyConnectedLayer                lstm_cell2_FC_hidden=lstm_weight_h2*lstm_hidden2
+                clnet::type::Weight             lstm_weight_h1[256,1024]
+                clnet::type::FullyConnectedLayer                lstm_cell1_FC_hidden=lstm_weight_h1*lstm_hidden1
+                clnet::type::Weight             lstm_weight_h0[256,1024]
+                clnet::type::FullyConnectedLayer                lstm_cell0_FC_hidden=lstm_weight_h0*lstm_hidden0
+                clnet::type::Output             lstm_input_timestep[32,256]
+                clnet::type::Weight             lstm_weight_x0[256,1024]
+                clnet::type::Bias               lstm_bias0[1024]
+                clnet::type::FullyConnectedLayer                lstm_cell0_FC_input=lstm_weight_x0*lstm_input_timestep+lstm_bias0
+                clnet::type::Output             lstm_cell0_FC_input[32,1024]
+                clnet::type::BinaryOperator             lstm_cell0_FC_hidden+=lstm_cell0_FC_input
+                clnet::type::Output             lstm_cell0_FC_hidden[32,1024]
+                clnet::type::LSTMCell           lstm_cell0
+                clnet::Tensor           lstm_dropout0_mask[32,256]
+                clnet::type::DropOut            lstm_dropout0
+                clnet::type::Output             lstm_hidden0[32,256]
+                clnet::type::Weight             lstm_weight_x1[256,1024]
+                clnet::type::Bias               lstm_bias1[1024]
+                clnet::type::FullyConnectedLayer                lstm_cell1_FC_input=lstm_weight_x1*lstm_hidden0+lstm_bias1
+                clnet::type::Output             lstm_cell1_FC_input[32,1024]
+                clnet::type::BinaryOperator             lstm_cell1_FC_hidden+=lstm_cell1_FC_input
+                clnet::type::Output             lstm_cell1_FC_hidden[32,1024]
+                clnet::type::LSTMCell           lstm_cell1
+                clnet::Tensor           lstm_dropout1_mask[32,256]
+                clnet::type::DropOut            lstm_dropout1
+                clnet::type::Output             lstm_hidden1[32,256]
+                clnet::type::Weight             lstm_weight_x2[256,1024]
+                clnet::type::Bias               lstm_bias2[1024]
+                clnet::type::FullyConnectedLayer                lstm_cell2_FC_input=lstm_weight_x2*lstm_hidden1+lstm_bias2
+                clnet::type::Output             lstm_cell2_FC_input[32,1024]
+                clnet::type::BinaryOperator             lstm_cell2_FC_hidden+=lstm_cell2_FC_input
+                clnet::type::Output             lstm_cell2_FC_hidden[32,1024]
+                clnet::type::LSTMCell           lstm_cell2
+                clnet::Tensor           lstm_dropout2_mask[32,256]
+                clnet::type::DropOut            lstm_dropout2
+                clnet::type::Output             lstm_hidden2[32,256]
+-               clnet::Tensor           lstm_runtime_cell_no[3]
+        clnet::type::Output             lstm[32,129,256]
+        clnet::type::Weight             class_weight[256,84]
+        clnet::type::Bias               class_bias[84]
+        clnet::type::FullyConnectedLayer                FC=class_weight*lstm+class_bias
+        clnet::type::Output             FC[4128,84]
+        clnet::type::Data               label[32,129]
+        clnet::back::Loss               negative_log_likelihood(softmax(FC),label)
+        clnet::back::Gradient           gradient(FC)[4128,84]
+        clnet::back::FullyConnectedLayer                back:FC=class_weight*lstm+class_bias
+        clnet::back::Gradient           gradient(lstm)[32,129,256]
+        clnet::type::LSTMInitializer            LSTM(embedding)_gradient_initializer
+-               clnet::back::Gradient           gradient(lstm_cell_state0)[32,256]
+                clnet::back::Gradient           gradient(lstm_hidden0)[32,256]
+                clnet::back::Gradient           gradient(lstm_cell_state1)[32,256]
+                clnet::back::Gradient           gradient(lstm_hidden1)[32,256]
+                clnet::back::Gradient           gradient(lstm_cell_state2)[32,256]
+                clnet::back::Gradient           gradient(lstm_hidden2)[32,256]
+        clnet::back::LSTM               back:LSTM(embedding)
+                clnet::back::DropOut            back:lstm_dropout2
+                clnet::back::Gradient           gradient(lstm_hidden2)[32,256]
+                clnet::back::LSTMCell           back:lstm_cell2
+                clnet::back::Gradient           gradient(lstm_cell2_FC_hidden)[32,1024]
+                clnet::back::BinaryOperator             back:lstm_cell2_FC_hidden+=lstm_cell2_FC_input
+                clnet::back::Gradient           gradient(lstm_cell2_FC_input)[32,1024]
+                clnet::back::FullyConnectedLayer                back:lstm_cell2_FC_input=lstm_weight_x2*lstm_hidden1+lstm_bias2
+                clnet::back::DropOut            back:lstm_dropout1
+                clnet::back::Gradient           gradient(lstm_hidden1)[32,256]
+                clnet::back::LSTMCell           back:lstm_cell1
+                clnet::back::Gradient           gradient(lstm_cell1_FC_hidden)[32,1024]
+                clnet::back::BinaryOperator             back:lstm_cell1_FC_hidden+=lstm_cell1_FC_input
+                clnet::back::Gradient           gradient(lstm_cell1_FC_input)[32,1024]
+                clnet::back::FullyConnectedLayer                back:lstm_cell1_FC_input=lstm_weight_x1*lstm_hidden0+lstm_bias1
+                clnet::back::DropOut            back:lstm_dropout0
+                clnet::back::Gradient           gradient(lstm_hidden0)[32,256]
+                clnet::back::LSTMCell           back:lstm_cell0
+                clnet::back::Gradient           gradient(lstm_cell0_FC_hidden)[32,1024]
+                clnet::back::BinaryOperator             back:lstm_cell0_FC_hidden+=lstm_cell0_FC_input
+                clnet::back::Gradient           gradient(lstm_cell0_FC_input)[32,1024]
+                clnet::back::FullyConnectedLayer                back:lstm_cell0_FC_input=lstm_weight_x0*lstm_input_timestep+lstm_bias0
+                clnet::back::FullyConnectedLayer                back:lstm_cell2_FC_hidden=lstm_weight_h2*lstm_hidden2
+                clnet::back::Gradient           gradient(lstm_weight_h2)[256,1024]
+                clnet::back::FullyConnectedLayer                back:lstm_cell1_FC_hidden=lstm_weight_h1*lstm_hidden1
+                clnet::back::Gradient           gradient(lstm_weight_h1)[256,1024]
+                clnet::back::FullyConnectedLayer                back:lstm_cell0_FC_hidden=lstm_weight_h0*lstm_hidden0
+                clnet::back::Gradient           gradient(lstm_weight_h0)[256,1024]
+                clnet::back::Gradient           gradient(lstm_weight_x0)[256,1024]
+                clnet::back::Gradient           gradient(lstm_bias0)[1024]
+                clnet::back::Gradient           gradient(lstm_weight_x1)[256,1024]
+                clnet::back::Gradient           gradient(lstm_bias1)[1024]
+                clnet::back::Gradient           gradient(lstm_weight_x2)[256,1024]
+                clnet::back::Gradient           gradient(lstm_bias2)[1024]
+                clnet::back::Gradient           gradient(lstm_input_timestep)[32,256]
+-               clnet::back::Gradient           gradient(embedding)[32,129,256]
+                clnet::Tensor           lstm_runtime_cell_no[3]
+        clnet::back::Gradient           gradient(embedding)[32,129,256]
+        clnet::back::Embedding          back:Embedding(data)
+        clnet::back::Gradient           gradient(embedding_matrix)[84,256]
+        clnet::back::Gradient           gradient(class_weight)[256,84]
+        clnet::back::Gradient           gradient(class_bias)[84]
+        clnet::type::StochasticGradientDescentUpdater           SGD
+-               clnet::type::Weight             embedding_matrix[84,256]
+                clnet::type::Weight             lstm_weight_h0[256,1024]
+                clnet::type::Weight             lstm_weight_x0[256,1024]
+                clnet::type::Bias               lstm_bias0[1024]
+                clnet::type::Weight             lstm_weight_h1[256,1024]
+                clnet::type::Weight             lstm_weight_x1[256,1024]
+                clnet::type::Bias               lstm_bias1[1024]
+                clnet::type::Weight             lstm_weight_h2[256,1024]
+                clnet::type::Weight             lstm_weight_x2[256,1024]
+                clnet::type::Bias               lstm_bias2[1024]
+                clnet::type::Weight             class_weight[256,84]
+                clnet::type::Bias               class_bias[84]
+-       clnet::InstantTensor            charRNN_monitor
 
+[1,@2018-06-30 16:29:48] GeForce GTX 1050 Ti (kernels build: 297ms)
+[debugger] interactive thread started on device 1.
+[debugger] device 1 break on IterativeOptimizer: clnet::type::IterativeOptimizer
+</pre>
 
 I'm working hard for **clNET** official release!
 -
