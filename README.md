@@ -26,7 +26,13 @@ Kernel性能尚待进一步优化（矩阵乘法gemm及小卷积核FFT优化算�
 charRNN：
 ```  
 .\Release\OpenCLNet.exe charRNN /ds :corpus_file D:\DataSets\charRNN\obama.txt :index_file D:\DataSets\charRNN\obama.index
-```  
+p
+save D:\DataSets\charRNN\epoch520_91%.clnetparams
+``` 
+charRNN推断：
+``` 
+.\Release\OpenCLNet.exe charRNN /p :index_file D:\DataSets\charRNN\obama.index :params_file D:\DataSets\charRNN\epoch520_91%.clnetparams :sample "Now it's time"
+``` 
 obama.txt可从[http://data.mxnet.io/mxnet/data/char_lstm.zip](http://data.mxnet.io/mxnet/data/char_lstm.zip)下载。  
 MNIST CNN：  
 ```
@@ -256,6 +262,14 @@ gradient(l0_bias): clnet::back::Gradient:               324ms/2%
 l1_weight: clnet::type::Weight:                 289ms/1%  
 gradient(l1_bias): clnet::back::Gradient:               287ms/1%  
 gradient(l1_weight): clnet::back::Gradient:             278ms/1%  
+</pre>
+一旦找到瓶颈，可以通过修改内置的kernels.cl或者修改Tensor.generate_source_code()加载的其他来源的OpenCL源码，实时重载kernels，测试提升效果：  
+```
+rk
+```
+<pre>
+[debugger] waiting ...
+[debugger] kernels reloaded.
 </pre>
 使用动态执行图，在执行“不等长”的数据如RNN-LSTM上，有性能优势：  
 ```

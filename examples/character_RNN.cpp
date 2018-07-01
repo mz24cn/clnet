@@ -140,7 +140,7 @@ public:
 Tensor* predict_charRNN(Tensor& graph, Tensor* lstm_initialzier, CharacterIndexer& indexer)
 {
 	auto params_file = optional<string>("params_file", OpenCL.location + "data/charRNN.clnetparams");
-	auto initializer = new InstantTensor("parameters_initializer", {}, {}, [&params_file](InstantTensor* self, DeviceInstance& I) {
+	auto initializer = new InstantTensor("parameters_initializer", {}, {}, [params_file](InstantTensor* self, DeviceInstance& I) {
 		ifstream ifs(params_file, istream::binary);
 		if (!ifs)
 			throw runtime_error("failed to open " + params_file);
@@ -151,7 +151,7 @@ Tensor* predict_charRNN(Tensor& graph, Tensor* lstm_initialzier, CharacterIndexe
 
 	auto sample = optional<string>("sample", "The ");
 	auto data = locate_tensor("data");
-	auto predictor = new InstantTensor("charRNN_predictor", {initializer, lstm_initialzier}, [&sample, &graph, &indexer, data](InstantTensor* self, DeviceInstance& I) {
+	auto predictor = new InstantTensor("charRNN_predictor", {initializer, lstm_initialzier}, [sample, &graph, &indexer, data](InstantTensor* self, DeviceInstance& I) {
 		int N = graph.volume;
 		set<Tensor*> visited;
 		vector<cl::Event> async;
@@ -170,7 +170,7 @@ Tensor* predict_charRNN(Tensor& graph, Tensor* lstm_initialzier, CharacterIndexe
 			float* output = I.pointers[&graph];
 			auto n = max_element(output, output + N) - output;
 			auto next = indexer[n];
-			logger << next;
+			logger << char(next); //for English corpus
 
 			I.pointers[data][0] = indexer(next);
 			data->download(I, &async);
