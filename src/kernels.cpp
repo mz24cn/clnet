@@ -122,7 +122,7 @@ string generate_kernel_sources(DeviceInstance& I, const cl::Device& device, unor
 	return sources;
 }
 
-void Tensor::launch(std::set<Tensor*>* executed, void* data, void (*functor)(Tensor*, void*))
+void Tensor::launch(set<Tensor*>* executed, void* data, void (*functor)(Tensor*, void*))
 {
 	if (executed->count(this) == 0) {
 		executed->insert(this);
@@ -252,6 +252,58 @@ void type::FullyConnectedLayer::run(DeviceInstance& I)
 //		cl::NDRange global(N * HIDDEN * parallel);
 //		I.queue.enqueueNDRangeKernel(kernel, cl::NullRange, global, local, &I.precondition_events, &I.events[peers[0]]);
 //	}
+}
+
+string type::BatchNormalizedLayer::generate_source_code(DeviceInstance& I)
+{
+	return kernels_source["feed_forward_batch_normalization"] + "\n" + kernels_source["feed_forward_batch_normalization_small"] + "\n" + kernels_source["feed_forward_batch_normalization_for_inference"];
+}
+
+void type::BatchNormalizedLayer::run(DeviceInstance& I)
+{
+	bool predictOnly = CLNET_TENSOR_GLOBALS & CLNET_PREDICT_ONLY;
+	int dim_in = inputs[0]->dimensions.back();
+	int N = inputs[0]->volume / dim_in; //(NHW)C or (batch_size)*K
+	if (predictOnly) {
+		auto& kernel = prepare_for_running_kernel(this, I, 2);
+		kernel.setArg(0, I.buffers[peers[0]]); //out
+		kernel.setArg(1, I.buffers[peers[3]]); //moving_mean
+		kernel.setArg(2, I.buffers[peers[4]]); //moving_variance
+		kernel.setArg(3, I.buffers[inputs[0]]); //in
+		kernel.setArg(4, I.buffers[inputs[1]]); //gamma
+		kernel.setArg(5, I.buffers[inputs[2]]); //beta
+		kernel.setArg(6, epsilon);
+		kernel.setArg(7, dim_in);
+		kernel.setArg(8, N);
+		cl::NDRange global(inputs[0]->volume);
+		I.queue.enqueueNDRangeKernel(kernel, cl::NullRange, global, cl::NullRange, &I.precondition_events, &I.events[peers[0]]);
+	}
+	else {
+		bool big = N > I.work_group_size;
+		auto& kernel = prepare_for_running_kernel(this, I, big? 0 : 1);
+		kernel.setArg(0, I.buffers[peers[0]]); //out
+		kernel.setArg(1, I.buffers[peers[1]]); //deviation
+		kernel.setArg(2, I.buffers[peers[2]]); //std_dev
+		kernel.setArg(3, I.buffers[peers[3]]); //moving_mean
+		kernel.setArg(4, I.buffers[peers[4]]); //moving_variance
+		kernel.setArg(5, I.buffers[inputs[0]]); //in
+		kernel.setArg(6, I.buffers[inputs[1]]); //gamma
+		kernel.setArg(7, I.buffers[inputs[2]]); //beta
+		kernel.setArg(8, epsilon);
+		kernel.setArg(9, momentum);
+		kernel.setArg(10, dim_in);
+		kernel.setArg(11, N);
+		if (big) {
+			int parallel = find_proper_local_size(N, I.work_group_size);
+			cl::NDRange global(dim_in * parallel);
+			cl::NDRange local(parallel);
+			I.queue.enqueueNDRangeKernel(kernel, cl::NullRange, global, local, &I.precondition_events, &I.events[peers[0]]);
+		}
+		else {
+			cl::NDRange global(dim_in);
+			I.queue.enqueueNDRangeKernel(kernel, cl::NullRange, global, cl::NullRange, &I.precondition_events, &I.events[peers[0]]);
+		}
+	}
 }
 
 string type::DropOut::generate_source_code(DeviceInstance& I)
@@ -392,7 +444,7 @@ void back::FullyConnectedLayer::run(DeviceInstance& I)
 	}
 	else {
 		if (temp_global_buffer.count(this) == 0) {
-			auto context = I.queue.getInfo<CL_QUEUE_CONTEXT>();
+			const auto& context = I.queue.getInfo<CL_QUEUE_CONTEXT>();
 			temp_global_buffer[this] = cl::Buffer(context, CL_MEM_READ_WRITE, N * dim_out * sizeof(float));
 		}
 		kernel.setArg(0, temp_global_buffer[this]);
@@ -438,6 +490,40 @@ void back::FullyConnectedLayer::run(DeviceInstance& I)
 			I.queue.enqueueNDRangeKernel(kernel2, cl::NullRange, cl::NDRange(N * dim_in), cl::NullRange, &I.precondition_events, &I.events[in_gradient]);
 		}
 	}
+}
+
+string back::BatchNormalizedLayer::generate_source_code(DeviceInstance& I)
+{
+	return kernels_source["back_propagate_batch_normalization"] + "\n" + kernels_source["back_propagate_batch_normalization_small"];
+}
+
+void back::BatchNormalizedLayer::run(DeviceInstance& I)
+{
+	int dim_in = peers[3]->dimensions.back();
+	int N = peers[3]->volume / dim_in; //(NHW)C or (batch_size)*K
+	bool big = N > I.work_group_size;
+	auto& kernel = prepare_for_running_kernel(this, I, big? 0 : 1);
+	kernel.setArg(0, I.buffers[peers[5]]); //in_grad
+	kernel.setArg(1, I.buffers[peers[0]]); //gamma_grad
+	kernel.setArg(2, I.buffers[peers[1]]); //beta_grad
+	kernel.setArg(3, I.buffers[peers[2]]); //gamma
+	kernel.setArg(4, I.buffers[peers[6]]); //deviation
+	kernel.setArg(5, I.buffers[peers[7]]); //std_dev
+	kernel.setArg(6, I.buffers[inputs[0]]); //out_grad
+	if (big)
+		kernel.setArg(7, I.buffers[peers[8]]); //deviation_grad
+	else {
+		cl::LocalSpaceArg tmpMem = cl::Local(sizeof(float) * N);
+		kernel.setArg(7, tmpMem); //deviation_grad
+	}
+	kernel.setArg(8, dim_in);
+	kernel.setArg(9, N);
+	kernel.setArg(10, attached? 1 : 0); //merge_gradient mode
+	int parallel = find_proper_local_size(N, I.work_group_size);
+	cl::NDRange global(dim_in * parallel);
+	cl::NDRange local(parallel);
+	I.queue.enqueueNDRangeKernel(kernel, cl::NullRange, global, local, &I.precondition_events, &I.events[peers[0]]);
+	I.events[peers[5]] = I.events[peers[1]] = I.events[peers[0]];
 }
 
 size_t& type::IterativeOptimizer::current_epoch(DeviceInstance& I)
@@ -572,13 +658,17 @@ void type::XavierNormalDistributionInitializer::run_globally(DeviceInstance& I)
 		int fan_in = tensor->dimensions.front(); //TODO
 		normal_distribution<float> distribution(mu, sqrt(sigma / fan_in));
 		if (dynamic_cast<Weight*>(tensor) != nullptr) { //TODO
-			for (int64 hidden = 0; hidden < tensor->dimensions.back(); hidden++)
-				for (int64 k = 0; k < tensor->dimensions.front(); k++)
-					tensor->pointer[k * tensor->dimensions.back() + hidden] = (float) distribution(generator);
+			if (dynamic_cast<type::BatchNormalizedLayer*>(tensor->peers[0]) != nullptr)
+				for (int64 i = 0; i < tensor->volume; i++)
+					tensor->pointer[i] = 1.0f;
+			else
+				for (int64 hidden = 0; hidden < tensor->dimensions.back(); hidden++)
+					for (int64 k = 0; k < tensor->dimensions.front(); k++)
+						tensor->pointer[k * tensor->dimensions.back() + hidden] = (float) distribution(generator);
 		}
 		else if (dynamic_cast<Bias*>(tensor) == nullptr)
 			for (float *p = tensor->pointer, *end = p + tensor->volume; p < end; p++)
-				*p = (float) distribution(generator);
+				*p = 0; //(float) distribution(generator); TODO
 	}
 }
 
@@ -638,7 +728,7 @@ void type::LSTMInitializer::run(DeviceInstance& I)
 		tensor->download(I, &no_preconditions); //clear to zero
 }
 
-std::vector<Tensor*> type::LSTMInitializer::auxiliaries()
+vector<Tensor*> type::LSTMInitializer::auxiliaries()
 {
 	return peers;
 }
@@ -903,7 +993,7 @@ void type::BinaryOperator::run(DeviceInstance& I)
 	}
 }
 
-std::string back::BinaryOperator::generate_source_code(DeviceInstance& I)
+string back::BinaryOperator::generate_source_code(DeviceInstance& I)
 {
 	return kernels_source["parallel_" + function];
 }
@@ -976,7 +1066,7 @@ float back::Loss::L(DeviceInstance& I) //for training progress evaluation scenar
 	return 0;
 }
 
-std::string type::ConvolutionKernel::generate_source_code(DeviceInstance& I)
+string type::ConvolutionKernel::generate_source_code(DeviceInstance& I)
 {
 	cl::Platform platform(I.device.getInfo<CL_DEVICE_PLATFORM>());
 	if (platform.getInfo<CL_PLATFORM_NAME>().find("NVIDIA") == string::npos)
@@ -1017,7 +1107,7 @@ void type::ConvolutionKernel::run(DeviceInstance& I)
 	I.queue.enqueueNDRangeKernel(kernel, cl::NullRange, global, cl::NullRange, &I.precondition_events, &I.events[output]);
 }
 
-std::string back::ConvolutionKernel::generate_source_code(DeviceInstance& I)
+string back::ConvolutionKernel::generate_source_code(DeviceInstance& I)
 {
 	string code = kernels_source["back_propagate_convolution_relu_gradient"];
 	auto& activation = static_cast<type::ConvolutionKernel*>(peers[0])->activation;
@@ -1027,7 +1117,7 @@ std::string back::ConvolutionKernel::generate_source_code(DeviceInstance& I)
 	return code;
 }
 
-std::string back::ConvolutionKernel::BackForInput::generate_source_code(DeviceInstance& I)
+string back::ConvolutionKernel::BackForInput::generate_source_code(DeviceInstance& I)
 {
 	string code = kernels_source["back_propagate_convolution_relu_gradient_for_input"];
 	auto& activation = static_cast<type::ConvolutionKernel*>(peers[0])->activation;
@@ -1096,7 +1186,7 @@ void back::ConvolutionKernel::run(DeviceInstance& I)
 	}
 }
 
-std::string type::Pooling::generate_source_code(DeviceInstance& I)
+string type::Pooling::generate_source_code(DeviceInstance& I)
 {
 	string code = kernels_source["feed_forward_" + type + "_pooling"];
 	return code;
@@ -1129,7 +1219,7 @@ void type::Pooling::run(DeviceInstance& I)
 	I.queue.enqueueNDRangeKernel(kernel, cl::NullRange, global, cl::NullRange, &I.precondition_events, &I.events[output]);
 }
 
-std::string back::Pooling::generate_source_code(DeviceInstance& I)
+string back::Pooling::generate_source_code(DeviceInstance& I)
 {
 	string code = kernels_source["back_propagate_" + static_cast<type::Pooling*>(peers[0])->type + "_pooling"];
 	return code;
@@ -1171,6 +1261,183 @@ void type::Reshape::run(DeviceInstance& I)
 void back::Reshape::run(DeviceInstance& I)
 {
 	I.events[peers[0]] = I.events[this];
+}
+
+string type::Activation::generate_source_code(DeviceInstance& I)
+{
+	string code = kernels_source["feed_forward_activation_sigmoid"];
+	if (function != "sigmoid")
+		replace_all(code, "sigmoid", function);
+
+	return code;
+}
+
+void type::Activation::run(DeviceInstance& I)
+{
+	auto& kernel = prepare_for_running_kernel(this, I);
+	auto input = inputs[0], output = peers[0];
+	kernel.setArg(0, I.buffers[output]);
+	kernel.setArg(1, I.buffers[input]);
+
+	cl::NDRange global(input->volume);
+	I.queue.enqueueNDRangeKernel(kernel, cl::NullRange, global, cl::NullRange, &I.precondition_events, &I.events[output]);
+}
+
+string back::Activation::generate_source_code(DeviceInstance& I)
+{
+	string code = kernels_source["back_propagate_activation_sigmoid"];
+	if (function != "sigmoid")
+		replace_all(code, "sigmoid", function);
+
+	return code;
+}
+
+void back::Activation::run(DeviceInstance& I)
+{
+	auto& kernel = prepare_for_running_kernel(this, I);
+	auto out_grad = inputs[0], output = peers[0], in_gradient = peers[1];
+	kernel.setArg(0, I.buffers[in_gradient]);
+	kernel.setArg(1, I.buffers[out_grad]);
+	kernel.setArg(2, I.buffers[output]);
+	kernel.setArg(3, attached? 1 : 0);
+
+	cl::NDRange global(output->volume);
+	I.queue.enqueueNDRangeKernel(kernel, cl::NullRange, global, cl::NullRange, &I.precondition_events, &I.events[in_gradient]);
+}
+
+string type::Softmax::generate_source_code(DeviceInstance& I)
+{
+	string code = kernels_source["feed_forward_softmax"];
+	return code;
+}
+
+void type::Softmax::run(DeviceInstance& I)
+{
+	auto& kernel = prepare_for_running_kernel(this, I);
+	int batch_size = peers[0]->dimensions[0];
+	int dim_in = peers[0]->dimensions[1];
+	kernel.setArg(0, I.buffers[peers[0]]); //out
+	kernel.setArg(1, I.buffers[inputs[0]]); //in
+
+	int parallel = find_proper_local_size(dim_in, I.work_group_size);
+	cl::LocalSpaceArg tmpMem = cl::Local(sizeof(float) * parallel);
+	kernel.setArg(2, tmpMem);
+	kernel.setArg(3, dim_in);
+	kernel.setArg(4, batch_size);
+
+	cl::NDRange global(batch_size * parallel);
+	cl::NDRange local(parallel);
+	I.queue.enqueueNDRangeKernel(kernel, cl::NullRange, global, local, &I.precondition_events, &I.events[peers[0]]);
+}
+
+string type::Concatenate::generate_source_code(DeviceInstance& I)
+{
+	if (axis == 0 || peers[0]->volume == peers[0]->dimensions.back())
+		return string();
+	string code = kernels_source["feed_forward_concatenate"];
+	return code;
+}
+
+void type::Concatenate::run(DeviceInstance& I)
+{
+	auto out = peers[0];
+	int out_offset = 0;
+	cl::Event event;
+
+	const auto& context = I.queue.getInfo<CL_QUEUE_CONTEXT>();
+	I.events[out] = cl::UserEvent(context);
+	new (I.pointers[this]) AssemblingEvent(inputs.size(), reinterpret_cast<cl::UserEvent*>(&I.events[out]));
+
+	if (axis == 0 || out->volume == out->dimensions.back()) {
+		for (auto input : inputs) {
+			if (input == nullptr || input->volume == 0) //exclude "pure kernel" tensor
+				continue;
+			I.precondition_events.clear();
+			I.precondition_events.push_back(I.events[input]);
+			I.queue.enqueueCopyBuffer(I.buffers[input], I.buffers[this], 0, out_offset, input->size, &I.precondition_events, &event);
+			event.setCallback(CL_COMPLETE, assembling_event_callback, I.pointers[this]);
+			out_offset += input->size;
+		}
+	}
+	else {
+		int out_stride = 1;
+		for (size_t i = axis; i < out->dimensions.size(); i++)
+			out_stride *= (int) out->dimensions[i];
+		int out_num = int(out->volume / out_stride);
+		auto& kernel = prepare_for_running_kernel(this, I);
+		kernel.setArg(0, I.buffers[peers[0]]); //out
+		kernel.setArg(3, out_stride);
+		kernel.setArg(4, out_num);
+		int parallel = find_proper_local_size(out_num, I.work_group_size);
+		cl::NDRange local(parallel);
+
+		for (auto input : inputs) {
+			int in_size = 1;
+			for (size_t i = axis; i < input->dimensions.size(); i++)
+				in_size *= (int) input->dimensions[i];
+			kernel.setArg(1, I.buffers[input]); //in
+			kernel.setArg(2, out_offset);
+
+			cl::NDRange global(in_size * parallel);
+			I.queue.enqueueNDRangeKernel(kernel, cl::NullRange, global, local, &I.precondition_events, &event);
+			event.setCallback(CL_COMPLETE, assembling_event_callback, I.pointers[this]);
+			out_offset += in_size;
+		}
+	}
+}
+
+string type::Split::generate_source_code(DeviceInstance& I)
+{
+	string code = kernels_source["feed_forward_split"];
+	return code;
+}
+
+void type::Split::run(DeviceInstance& I)
+{
+	auto in = inputs[0];
+	int in_offset = 0;
+	if (axis == 0 || in->volume == in->dimensions.back()) {
+		I.precondition_events.clear();
+		I.precondition_events.push_back(I.events[in]);
+		for (auto output : peers) {
+			I.queue.enqueueCopyBuffer(I.buffers[in], I.buffers[output], in_offset, 0, output->size, &I.precondition_events, &I.events[output]);
+			in_offset += output->size;
+		}
+	}
+	else {
+		int in_stride = 1;
+		for (size_t i = axis; i < in->dimensions.size(); i++)
+			in_stride *= (int) in->dimensions[i];
+		int in_num = int(in->volume / in_stride);
+		auto& kernel = prepare_for_running_kernel(this, I);
+		kernel.setArg(1, I.buffers[inputs[0]]); //in
+		kernel.setArg(3, in_stride);
+		kernel.setArg(4, in_num);
+		int parallel = find_proper_local_size(in_num, I.work_group_size);
+		cl::NDRange local(parallel);
+
+		for (auto output : peers) {
+			int out_size = 1;
+			for (size_t i = axis; i < output->dimensions.size(); i++)
+				out_size *= (int) output->dimensions[i];
+			kernel.setArg(0, I.buffers[output]); //out
+			kernel.setArg(2, in_offset);
+
+			cl::NDRange global(out_size * parallel);
+			I.queue.enqueueNDRangeKernel(kernel, cl::NullRange, global, local, &I.precondition_events, &I.events[output]);
+			in_offset += out_size;
+		}
+	}
+}
+
+void type::Collector::run(DeviceInstance& I) {
+	auto input = inputs[0], output = peers[0];
+	I.precondition_events.clear();
+	I.precondition_events.push_back(I.events[input]);
+	auto& offset = *reinterpret_cast<atomic<int64>*>(I.pointers[this]);
+	I.queue.enqueueCopyBuffer(I.buffers[input], I.buffers[output], 0, offset * sizeof(float), input->volume * sizeof(float), &I.precondition_events, &I.events[output]);
+	offset += input->volume;
+	offset.compare_exchange_strong(output->volume, 0);
 }
 
 }

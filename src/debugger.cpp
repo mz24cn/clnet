@@ -603,9 +603,8 @@ void debugger_thread(DeviceInstance& I, Tensor& graph)
 			}
 			else if (command == "rk" || command == "reload_kernel") {
 				logger << "[debugger] waiting ...\n";
-				const auto& device = I.queue.getInfo<CL_QUEUE_DEVICE>();
 				const auto& context = I.queue.getInfo<CL_QUEUE_CONTEXT>();
-				reload_kernels(device, context, I);
+				reload_kernels(I.device, context, I);
 				logger << "[debugger] kernels reloaded." << endl;
 			}
 			else if (command == "save") {

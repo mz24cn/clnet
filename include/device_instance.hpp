@@ -71,6 +71,12 @@ public:
 	}
 };
 
+struct AssemblingEvent {
+	std::atomic<int> counter;
+	cl::UserEvent* event;
+	AssemblingEvent(int count, cl::UserEvent* pEvent) : counter(count), event(pEvent) {}
+};
+
 #define MAX_LOGGER_STREAMS 8
 class Logger { //thread 'atomic' logger
 	std::ostream* streams[MAX_LOGGER_STREAMS];
@@ -114,6 +120,7 @@ cl::Kernel& prepare_for_running_kernel(Tensor* tensor, DeviceInstance& I, int nu
 void wait_for_all_kernels_finished(DeviceInstance& I);
 int find_proper_local_size(int required, int work_group_size);
 
+void CL_CALLBACK assembling_event_callback(cl_event, cl_int, void * user_data);
 void CL_CALLBACK gradients_event_callback(cl_event, cl_int, void * user_data);
 void CL_CALLBACK parameters_event_callback(cl_event, cl_int, void * user_data);
 void launch_debugger_thread(DeviceInstance& I, Tensor& graph);

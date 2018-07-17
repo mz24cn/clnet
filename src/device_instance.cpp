@@ -51,6 +51,7 @@ void reload_kernels(const cl::Device& device, const cl::Context& context, Device
 	string source = generate_kernel_sources(I, device, tensor_kernels);
 
 	cl::Program program(context, source);
+	cl_build_options.append(" -DMAX_WORK_GROUP_SIZE=").append(to_string(I.work_group_size));
 	try {
 		if (CLNET_TENSOR_GLOBALS & CLNET_OPENCL_SHOW_SOURCE)
 			logger << "cl_build_options: " << cl_build_options << "\nsource code:\n" << source << endl;
@@ -217,6 +218,13 @@ void DeviceInstance::free()
 			delete iter.second;
 			memory.insert(iter.second);
 		}
+}
+
+void CL_CALLBACK assembling_event_callback(cl_event, cl_int, void * user_data)
+{
+	auto out_event = reinterpret_cast<AssemblingEvent*>(user_data);
+	if (--out_event->counter == 0)
+		out_event->event->setStatus(CL_COMPLETE);
 }
 
 void CL_CALLBACK gradients_event_callback(cl_event, cl_int, void * user_data)

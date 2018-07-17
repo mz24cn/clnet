@@ -52,7 +52,7 @@ struct Tensor {
 	Tensor& operator + (Tensor& other);
 	Tensor& operator += (Tensor& other);
 	Tensor& operator = (Tensor& other);
-	Tensor& transpose();
+//	Tensor& transpose();
 
 	void dependent_on(Tensor* precusor);
 	void shape_with(std::vector<int64> sizes);
@@ -76,7 +76,8 @@ Tensor& sigmoid(Tensor& z, std::string name = "");
 Tensor& softrelu(Tensor& z, std::string name = "");
 Tensor& relu(Tensor& z, std::string name = "");
 Tensor& tanh(Tensor& z, std::string name = "");
-//Tensor& softmax(Tensor& z, std::string name = "");
+
+Tensor& BatchNormalizedLayer(Tensor& input, float epsilon = 0.001f, float momentum = 0.9f, std::string name = "BN");
 Tensor& DropOut(Tensor& data, float probability_dropout, std::string name = "dropout");
 
 Tensor& LinearRegressionLoss(Tensor& y, Tensor& label);
@@ -91,7 +92,13 @@ Tensor& Embedding(Tensor& input, Tensor& vector_weight, std::string name = "embe
 Tensor& ConvolutionKernel(Tensor& input/*NHWC*/, int filter_count, int kernel_size, int stride_size = 1, std::string activation_function = "relu", bool use_padding = false, std::string name = "convolution");
 Tensor& ConvolutionKernel(Tensor& input/*NHWC*/, Tensor& weight, Tensor* bias, std::vector<int> stride_sizes = {1, 1}, std::string activation_function = "relu", bool use_padding = false, std::string name = "");
 Tensor& Pooling(Tensor& input, std::vector<int> pooling_sizes = {2, 2}, std::vector<int> stride_sizes = {}, std::string pooling_type = "max", bool use_padding = false, std::string name = "");
+
 Tensor& Reshape(Tensor& input, std::vector<int64> target_shape, std::string name = "reshape");
+Tensor& Softmax(Tensor& z, std::string name = "softmax"); //Cann't propagate back currently
+Tensor& Concatenate(std::vector<Tensor*> parts, int axis = -1, std::string name = "concatenate");
+std::vector<Tensor*> Split(Tensor& input, int number, int axis = -1, std::string name = "slice");
+std::vector<Tensor*> Split(Tensor& input, std::vector<int64> lengths, int axis = -1, std::string name = "");
+Tensor& Collector(Tensor& input, int64 size, std::string name = "collector");
 
 std::string type_name(Tensor* tensor);
 Tensor* locate_tensor(std::string name);
@@ -186,11 +193,32 @@ struct Output : Tensor {
 
 struct Activation : Tensor {
 	std::string function;
+
+	virtual Tensor* generate_gradient(Tensor* generator = nullptr) override;
+	virtual std::string generate_source_code(DeviceInstance& I) override;
+	virtual void run(DeviceInstance& I) override;
 };
 
 struct BinaryOperator : Tensor {
 	std::string function;
+
 	virtual Tensor* generate_gradient(Tensor* generator = nullptr) override;
+	virtual std::string generate_source_code(DeviceInstance& I) override;
+	virtual void run(DeviceInstance& I) override;
+};
+
+struct FullyConnectedLayer : Tensor {
+	std::string activation;
+
+	virtual Tensor* generate_gradient(Tensor* out_gradient = nullptr) override;
+	virtual std::string generate_source_code(DeviceInstance& I) override;
+	virtual void run(DeviceInstance& I) override;
+};
+
+struct BatchNormalizedLayer : Tensor {
+	float epsilon, momentum;
+
+	virtual Tensor* generate_gradient(Tensor* out_gradient = nullptr) override;
 	virtual std::string generate_source_code(DeviceInstance& I) override;
 	virtual void run(DeviceInstance& I) override;
 };
@@ -210,14 +238,6 @@ struct DropOut : Tensor {
 	virtual void refresh_random_numbers(DeviceInstance& I, const std::vector<cl::Event>& preconditions);
 
 	static std::default_random_engine generator;
-};
-
-struct FullyConnectedLayer : Tensor {
-	std::string activation;
-
-	virtual Tensor* generate_gradient(Tensor* out_gradient = nullptr) override;
-	virtual std::string generate_source_code(DeviceInstance& I) override;
-	virtual void run(DeviceInstance& I) override;
 };
 
 struct LSTMCell : Tensor {
@@ -271,6 +291,31 @@ struct Reshape : Tensor {
 	virtual ~Reshape();
 };
 
+struct Softmax : Tensor { //We don't calculate Jacobi matrix for softmax
+	virtual std::string generate_source_code(DeviceInstance& I) override;
+	virtual void run(DeviceInstance& I) override;
+};
+
+struct Concatenate : Tensor {
+	int axis;
+
+	virtual Tensor* generate_gradient(Tensor* out_gradient = nullptr) override;
+	virtual std::string generate_source_code(DeviceInstance& I) override;
+	virtual void run(DeviceInstance& I) override;
+};
+
+struct Split : Tensor {
+	int axis;
+
+	virtual Tensor* generate_gradient(Tensor* out_gradient = nullptr) override;
+	virtual std::string generate_source_code(DeviceInstance& I) override;
+	virtual void run(DeviceInstance& I) override;
+};
+
+struct Collector : Tensor {
+	virtual void run(DeviceInstance& I) override;
+};
+
 }
 
 //for convenience
@@ -321,6 +366,13 @@ struct Loss : Tensor {
 	virtual void run(DeviceInstance& I) override;
 };
 
+struct Activation : Gradient {
+	std::string function;
+
+	virtual std::string generate_source_code(DeviceInstance& I) override;
+	virtual void run(DeviceInstance& I) override;
+};
+
 struct BinaryOperator : Tensor {
 	std::string function;
 
@@ -348,6 +400,11 @@ struct LSTM : Tensor, type::Structured {
 struct FullyConnectedLayer : Gradient {
 	std::string activation;
 
+	virtual std::string generate_source_code(DeviceInstance& I) override;
+	virtual void run(DeviceInstance& I) override;
+};
+
+struct BatchNormalizedLayer : Gradient {
 	virtual std::string generate_source_code(DeviceInstance& I) override;
 	virtual void run(DeviceInstance& I) override;
 };

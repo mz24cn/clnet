@@ -114,6 +114,27 @@ T MNIST_CNN(bool is_predict)
 	//when filters3 > 480, AMD R9 295X2 (Hawaii) device runs unstably, randomly cause program to hung
 	const int kernel_size = 5, stride = 1, filters1 = 20, filters2 = 50, filters3 = 480, class_num = 10;
 	const string activation = "tanh", pooling_type = "max";
+//	T plane = Reshape(data, {data.dimensions.front(), data.volume / data.dimensions.front()}, "plane");
+//	T FC1 = FullyConnectedLayer(plane, 512, "", "FC1");
+//	T BN1 = BatchNormalizedLayer(FC1, 0.001, 0.9, "BN1");
+//	T ACT1 = tanh(BN1);
+//	T FC2 = FullyConnectedLayer(ACT1, 512, "", "FC2");
+//	T BN2 = BatchNormalizedLayer(FC2, 0.001, 0.9, "BN2");
+//	T reshape = tanh(BN2);
+//	T FC1 = FullyConnectedLayer(plane, 512, activation, "FC1");
+//	T FC2 = FullyConnectedLayer(FC1, 512, activation, "FC2");
+//	T reshape = FC2;
+
+//	T conv1 = ConvolutionKernel(data, filters1, kernel_size, stride, "", true, "conv1");
+//	T BN1 = BatchNormalizedLayer(conv1, 0.001, 0.9, "BN1");
+//	T ACT1 = tanh(BN1);
+//	T pool1 = Pooling(ACT1, {2}, {}, pooling_type, true, "pool1");
+//	T conv2 = ConvolutionKernel(pool1, filters2, kernel_size, stride, "", true, "conv2");
+//	T BN2 = BatchNormalizedLayer(conv2, 0.001, 0.9, "BN2");
+//	T ACT2 = tanh(BN2);
+//	T pool2 = Pooling(ACT2, {2}, {}, pooling_type, true, "pool2");
+//	T reshape = Reshape(pool2, {pool2.dimensions[0], pool2.volume / pool2.dimensions[0]});
+
 	T conv1 = ConvolutionKernel(data, filters1, kernel_size, stride, activation, true, "conv1");
 	T pool1 = Pooling(conv1, {2}, {}, pooling_type, true, "pool1");
 	T conv2 = ConvolutionKernel(pool1, filters2, kernel_size, stride, activation, true, "conv2");
@@ -121,9 +142,8 @@ T MNIST_CNN(bool is_predict)
 //	T conv3 = ConvolutionKernel(pool2, filters3, 2, stride, activation, true, "conv3");
 //	T pool3 = Pooling(conv3, {2}, {}, pooling_type, true, "pool3");
 //	T reshape = Reshape(pool3, {pool3.dimensions[0], pool3.volume / pool3.dimensions[0]});
-
 	T reshape = Reshape(pool2, {pool2.dimensions[0], pool2.volume / pool2.dimensions[0]});
-//	T reshape = Reshape(data, {data.dimensions[0], data.volume / data.dimensions[0]});
+
 	T feature = FullyConnectedLayer(reshape, filters3, activation, "feature");
 	T inference = FullyConnectedLayer(feature, class_num, "", "inference");
 	if (is_predict)
@@ -169,6 +189,7 @@ T MNIST_CNN(bool is_predict)
 		auto tester = static_cast<type::MiniBatch*>(iterator->peers[4]);
 		auto& offset = reinterpret_cast<int*>(I.pointers[tester])[0];
 		int correct = 0, N = inference.dimensions[0];
+		CLNET_TENSOR_GLOBALS |= CLNET_PREDICT_ONLY;
 		while (tester->has_next(I)) {
 			visited.clear();
 			inference.launch(&visited, &I);
@@ -182,6 +203,7 @@ T MNIST_CNN(bool is_predict)
 				if ((max_element(output, output + class_num) - output) == *labels)
 					correct++;
 		}
+		CLNET_TENSOR_GLOBALS ^= CLNET_PREDICT_ONLY;
 		float accuracy = (int) (10000.0f * correct / iterator->peers[2]->dimensions[0]) / 100.0f;
 		logger << "\ttest set accuracy: " << accuracy  << "%" << endl;
 		offset = -1; //random_shuffle on test set is not needed.

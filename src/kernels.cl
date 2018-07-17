@@ -22,42 +22,42 @@ inline float sigmoid(float z)
 {
 	return 1.0f / (1.0f + exp(-z));
 }
-inline float sigmoid_gradient(float a)
+inline float sigmoid_gradient(float y)
 {
-	return a * (1.0f - a);
+	return y * (1.0f - y);
 }
 
 inline float relu(float z)
 {
 	return z > 0? z : 0;
 }
-inline float relu_gradient(float a)
+inline float relu_gradient(float y)
 {
-	return a > 0? 1 : 0;
+	return y > 0? 1 : 0;
 }
 
 //tanh is predefined
-inline float tanh_gradient(float a)
+inline float tanh_gradient(float y)
 {
-	return 1.0f - a * a;
+	return 1.0f - y * y;
 }
 
 inline float softrelu(float z)
 {
 	return log(1.0f + exp(z));
 }
-inline float softrelu_gradient(float a)
+inline float softrelu_gradient(float y)
 {
-	return 1.0f - exp(-a);
+	return 1.0f - exp(-y);
 }
 
 inline float leakyrelu(float z)
 {
 	return z > 0? z : 0.25f * z;
 }
-inline float leakyrelu_gradient(float a)
+inline float leakyrelu_gradient(float y)
 {
-	return a > 0? 1 : 0.25f;
+	return y > 0? 1 : 0.25f;
 }
 
 inline float linear_regression(float y, float label)
@@ -71,16 +71,9 @@ inline float linear_regression_gradient(float y, float label)
 }
 
 //softmax is calculated by pow(z) / sum of pow
-inline float negative_log_likelihood_gradient(float a, bool i_equal_j)
+inline float negative_log_likelihood_gradient(float y, bool i_equal_j)
 {
-	return i_equal_j? a - 1.0f : a;
-}
-
-//Parallel: (sizeof(data))
-kernel void activation_sigmoid(global float* data)
-{
-	const int GID = get_global_id(0);
-	data[GID] = sigmoid(data[GID]);
+	return i_equal_j? y - 1.0f : y;
 }
 
 //Standard implementation
@@ -261,6 +254,40 @@ kernel void negative_log_likelihood_loss(global float* out_grad, global float* o
 		const int i = ((int) label[n]), k = n * dim_in + index;
 		out[k] /= sum;
 		out_grad[k] = negative_log_likelihood_gradient(out[k], index == i);
+	}
+}
+
+//Parallel: (batch_size * get_local_size(0))
+kernel void feed_forward_softmax(global float* out, const global float* in, local float* tmp, const int dim_in, const int batch_size)
+{
+	const int GID = get_global_id(0);
+	const int parallel = get_local_size(0); //no more than dim_in
+	const int n = GID / parallel;
+	const int pos = GID % parallel;
+
+	float max_value = in[n * dim_in];
+	for (int index = 1; index < dim_in; index++)
+		max_value = max(max_value, in[n * dim_in + index]);
+
+	float sum = 0;
+	for (int index = pos; index < dim_in; index += parallel) {
+		const int k = n * dim_in + index;
+		out[k] = exp(in[k] - max_value);
+		sum += out[k];
+	}
+
+	tmp[pos] = sum;
+	work_group_barrier(CLK_LOCAL_MEM_FENCE);
+	for (int stride = parallel / 2; stride > 0; stride = stride / 2) {
+		if (pos < stride)
+			tmp[pos] += tmp[pos + stride];
+		work_group_barrier(CLK_LOCAL_MEM_FENCE);
+	}
+	sum = tmp[0];
+
+	for (int index = pos; index < dim_in; index += parallel) {
+		const int k = n * dim_in + index;
+		out[k] /= sum;
 	}
 }
 
@@ -773,7 +800,7 @@ kernel void back_propagate_dropout(global float* out_grad, const global float* m
 }
 
 //Parallel: (get_local_size(0) * vector_length)
-kernel void feed_forward_embedding(global float* out, global float* input,
+kernel void feed_forward_embedding(global float* out, const global float* input,
 		const global float* vector_weight, local float* tmp, const int dim_in, const int vector_length)
 {
 	const int GID = get_global_id(0);
@@ -791,4 +818,218 @@ kernel void back_propagate_embedding(global float* vector_weight_grad, const glo
 	const int GID = get_global_id(0);
 	for (int i = 0; i < dim_in; i++)
 		vector_weight_grad[((int) input[i]) * vector_length + GID] += out_grad[i * vector_length + GID];
+}
+
+//Parallel: (dim_in * local(min(batch_size, work_group_size)))
+//Parallel: (in_depth * local(min(batch_size * H * W, work_group_size))) // sum on batch_size * H * W for convolutional case
+kernel void feed_forward_batch_normalization(global float* out, global float* deviation, global float* std_dev,
+		global float* moving_mean, global float* moving_variance, const global float* in,
+		const global float* gamma, const global float* beta, const float epsilon, const float momentum, const int dim_in, const int batch_size)
+{
+	const int GID = get_global_id(0);
+	const int parallel = get_local_size(0); //parallel addition, trade space for time
+	const int k = GID / parallel;
+	const int n = GID % parallel;
+	
+	local float mean_[MAX_WORK_GROUP_SIZE], sigma2_[MAX_WORK_GROUP_SIZE];
+	mean_[n] = 0;
+	sigma2_[n] = 0;
+	for (int i = n; i < batch_size; i += parallel)
+		mean_[n] += in[i * dim_in + k];
+	for (int stride = parallel / 2; stride > 0; stride = stride / 2) {
+		work_group_barrier(CLK_LOCAL_MEM_FENCE);
+		if (n < stride)
+			mean_[n] += mean_[n + stride];
+	}
+	float mean = mean_[0] / batch_size;
+	moving_mean[k] = moving_mean[k] * momentum + mean * (1 - momentum);
+	
+	for (int i = n; i < batch_size; i += parallel) {
+		const float delta = in[i * dim_in + k] - mean;
+		deviation[i * dim_in + k] = delta;
+		sigma2_[n] += delta * delta;
+	}
+	for (int stride = parallel / 2; stride > 0; stride = stride / 2) {
+		work_group_barrier(CLK_LOCAL_MEM_FENCE);
+		if (n < stride)
+			sigma2_[n] += sigma2_[n + stride];
+	}
+	float sigma2 = sigma2_[0] / batch_size;
+	moving_variance[k] = moving_variance[k] * momentum + sigma2 * (1 - momentum);
+	sigma2 = sqrt(sigma2 + epsilon);
+	if (std_dev != NULL)
+		std_dev[k] = sigma2;
+
+	for (int i = n; i < batch_size; i += parallel)
+		out[i * dim_in + k] = gamma[k] / sigma2 * deviation[i * dim_in + k] + beta[k];
+}
+
+//Parallel: (dim_in) // sum on batch_size
+kernel void feed_forward_batch_normalization_small(global float* out, global float* deviation, global float* std_dev,
+		global float* moving_mean, global float* moving_variance, const global float* in,
+		const global float* gamma, const global float* beta, const float epsilon, const float momentum, const int dim_in, const int batch_size)
+{
+	const int k = get_global_id(0);
+
+	float mean = 0;
+	for (int i = 0; i < batch_size; i++)
+		mean += in[i * dim_in + k];
+	mean /= batch_size;
+	moving_mean[k] = moving_mean[k] * momentum + mean * (1 - momentum);
+
+	float sigma2 = 0;
+	for (int i = 0; i < batch_size; i++) {
+		const float delta = in[i * dim_in + k] - mean;
+		deviation[i * dim_in + k] = delta;
+		sigma2 += delta * delta;
+	}
+	sigma2 = sigma2 / batch_size;
+	moving_variance[k] = moving_variance[k] * momentum + sigma2 * (1 - momentum);
+	sigma2 = sqrt(sigma2 + epsilon);
+	if (std_dev != NULL)
+		std_dev[k] = sigma2;
+
+	for (int i = 0; i < batch_size; i++)
+		out[i * dim_in + k] = gamma[k] / sigma2 * deviation[i * dim_in + k] + beta[k];
+}
+
+//Parallel: (dim_in * batch_size)
+//Parallel: (in_depth * (batch_size * H * W)) //for convolutional case
+kernel void feed_forward_batch_normalization_for_inference(global float* out, const global float* moving_mean, const global float* moving_variance, 
+		const global float* in, const global float* gamma, const global float* beta, const float epsilon, const int dim_in, const int batch_size)
+{
+	const int GID = get_global_id(0);
+	const int k = GID / batch_size;
+	const int n = GID % batch_size;
+
+	out[n * dim_in + k] = gamma[k] / sqrt(moving_variance[k] + epsilon) * (in[n * dim_in + k] - moving_mean[k]) + beta[k];
+}
+
+//Parallel: (in_depth * local(min(batch_size * H * W, work_group_size))) //for convolutional case
+kernel void back_propagate_batch_normalization(global float* in_grad, global float* gamma_grad, global float* beta_grad,
+		const global float* gamma, const global float* deviation, const global float* std_dev, const global float* out_grad,
+		global float* deviation_grad, const int dim_in, const int batch_size, const int is_addon)
+{
+	const int GID = get_global_id(0);
+	const int parallel = get_local_size(0); //parallel addition, trade space for time
+	const int k = GID / parallel;
+	const int n = GID % parallel;
+
+	local float variance_grad_[MAX_WORK_GROUP_SIZE];
+	local float mu_grad_[MAX_WORK_GROUP_SIZE], mu_tmp1_[MAX_WORK_GROUP_SIZE], mu_tmp2_[MAX_WORK_GROUP_SIZE];
+	local float gamma_gradient_[MAX_WORK_GROUP_SIZE], beta_gradient_[MAX_WORK_GROUP_SIZE];
+	variance_grad_[n] = 0;
+	mu_grad_[n] = 0;
+	mu_tmp1_[n] = 0;
+	mu_tmp2_[n] = 0;
+	gamma_gradient_[n] = 0;
+	beta_gradient_[n] = 0;
+	
+	for (int i = n; i < batch_size; i += parallel) {
+		deviation_grad[i * dim_in + k] = out_grad[i * dim_in + k] * gamma[k]; //dim_out == dim_in
+		variance_grad_[n] += deviation_grad[i * dim_in + k] * deviation[i * dim_in + k];
+		mu_tmp1_[n] += deviation_grad[i * dim_in + k];
+		mu_tmp2_[n] += deviation[i * dim_in + k];
+		gamma_gradient_[n] += out_grad[i * dim_in + k] * deviation[i * dim_in + k];
+		beta_gradient_[n] += out_grad[i * dim_in + k];
+	}
+	for (int stride = parallel / 2; stride > 0; stride = stride / 2) {
+		work_group_barrier(CLK_LOCAL_MEM_FENCE);
+		if (n < stride) {
+			variance_grad_[n] += variance_grad_[n + stride];
+			mu_tmp1_[n] += mu_tmp1_[n + stride];
+			mu_tmp2_[n] += mu_tmp2_[n + stride];
+			gamma_gradient_[n] += gamma_gradient_[n + stride];
+			beta_gradient_[n] += beta_gradient_[n + stride];
+		}
+	}
+	float variance_grad = variance_grad_[0];
+	float mu_grad = mu_grad_[0], mu_tmp1 = mu_tmp1_[0], mu_tmp2 = mu_tmp2_[0];
+	float gamma_gradient = gamma_gradient_[0], beta_gradient = beta_gradient_[0];
+	
+	variance_grad *= - 0.5f / pow(std_dev[k], 3);
+	mu_grad = - mu_tmp1 / std_dev[k] - 2 * variance_grad / batch_size * mu_tmp2;
+	if (is_addon)
+		for (int i = n; i < batch_size; i += parallel)
+			in_grad[i * dim_in + k] += deviation_grad[i * dim_in + k] / std_dev[k] + 2 * variance_grad * deviation[i * dim_in + k] / batch_size + mu_grad / batch_size;
+	else
+		for (int i = n; i < batch_size; i += parallel)
+			in_grad[i * dim_in + k] = deviation_grad[i * dim_in + k] / std_dev[k] + 2 * variance_grad * deviation[i * dim_in + k] / batch_size + mu_grad / batch_size;
+	gamma_gradient /= std_dev[k];
+	gamma_grad[k] = gamma_gradient;
+	beta_grad[k] = beta_gradient;
+}
+
+//Parallel: (dim_in * local(batch_size))
+kernel void back_propagate_batch_normalization_small(global float* in_grad, global float* gamma_grad, global float* beta_grad,
+		const global float* gamma, const global float* deviation, const global float* std_dev,
+		const global float* out_grad, local float* deviation_grad, const int dim_in, const int batch_size, const int is_addon)
+{
+	const int GID = get_global_id(0);
+	const int k = GID / batch_size;
+	const int n = GID % batch_size;
+
+	deviation_grad[n] = out_grad[n * dim_in + k] * gamma[k]; //dim_out == dim_in
+	work_group_barrier(CLK_LOCAL_MEM_FENCE);
+
+	float variance_grad = 0;
+	float mu_grad = 0, mu_tmp1 = 0, mu_tmp2 = 0;
+	float gamma_gradient = 0, beta_gradient = 0;
+	for (int i = 0; i < batch_size; i++) {
+		variance_grad += deviation_grad[i] * deviation[i * dim_in + k];
+		mu_tmp1 += deviation_grad[i];
+		mu_tmp2 += deviation[i * dim_in + k];
+		gamma_gradient += out_grad[i * dim_in + k] * deviation[i * dim_in + k];
+		beta_gradient += out_grad[i * dim_in + k];
+	}
+	variance_grad *= - 0.5f / pow(std_dev[k], 3);
+	mu_grad = - mu_tmp1 / std_dev[k] - 2 * variance_grad / batch_size * mu_tmp2;
+	if (is_addon)
+		in_grad[n * dim_in + k] += deviation_grad[n] / std_dev[k] + 2 * variance_grad * deviation[n * dim_in + k] / batch_size + mu_grad / batch_size;
+	else
+		in_grad[n * dim_in + k] = deviation_grad[n] / std_dev[k] + 2 * variance_grad * deviation[n * dim_in + k] / batch_size + mu_grad / batch_size;
+	gamma_gradient /= std_dev[k];
+	gamma_grad[k] = gamma_gradient;
+	beta_grad[k] = beta_gradient;
+}
+
+//Parallel: (sizeof(data))
+kernel void feed_forward_activation_sigmoid(global float* out, const global float* in)
+{
+	const int GID = get_global_id(0);
+	out[GID] = sigmoid(in[GID]);
+}
+
+//Parallel: (sizeof(data))
+kernel void back_propagate_activation_sigmoid(global float* in_grad, const global float* out_grad, const global float* out, const int is_addon)
+{
+	const int GID = get_global_id(0);
+	if (is_addon)
+		in_grad[GID] += sigmoid_gradient(out[GID]) * out_grad[GID];
+	else
+		in_grad[GID] = sigmoid_gradient(out[GID]) * out_grad[GID];
+}
+
+//Parallel: (in_size * local_size)
+kernel void feed_forward_concatenate(global float* out, const global float* in, const int out_offset, const int out_stride, const int out_num, const int in_size)
+{
+	const int GID = get_global_id(0);
+	const int parallel = get_local_size(0);
+	const int k = GID / parallel;
+	const int n = GID % parallel;
+
+	for (int i = n; i < out_num; i += parallel)
+		out[out_stride * i + out_offset + k] = in[i * in_size + k];
+}
+
+//Parallel: (out_size * local_size)
+kernel void feed_forward_split(global float* out, const global float* in, const int in_offset, const int in_stride, const int in_num, const int out_size)
+{
+	const int GID = get_global_id(0);
+	const int parallel = get_local_size(0);
+	const int k = GID / parallel;
+	const int n = GID % parallel;
+
+	for (int i = n; i < in_num; i += parallel)
+		out[i * out_size + k] = in[in_stride * i + in_offset + k];
 }

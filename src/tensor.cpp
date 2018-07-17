@@ -341,16 +341,16 @@ Tensor& Tensor::operator = (Tensor& other)
 	return *this;
 }
 
-Tensor& Tensor::transpose()
-{
+//Tensor& Tensor::transpose()
+//{
 //	auto tensor = new type::Output;
 //	tensor->function = "plus";
 //	tensor->alias = alias + "+=" + other.alias;
 //	tensor->dependent_on(this);
 //	tensor->dependent_on(&other);
 //	dependent_on(tensor);
-	return *this;
-}
+//	return *this;
+//}
 
 Tensor* type::Output::generate_gradient(Tensor* generator)
 {
@@ -401,6 +401,47 @@ Tensor& SoftmaxLoss(Tensor& y, Tensor& label)
 	tensor->peers.push_back(out_gradient);
 	new type::Output(y.dimensions, {tensor}, softmax);
 	return *tensor;
+}
+
+Tensor& BatchNormalizedLayer(Tensor& input, float epsilon, float momentum, std::string name)
+{
+	auto tensor = new type::BatchNormalizedLayer;
+	auto prefix = name.empty()? name : name + "_";
+	Tensor& gamma = Weight({input.dimensions.back()}, prefix + "gamma");
+	Tensor& beta = Bias({input.dimensions.back()}, prefix + "beta");
+	string formula = gamma.alias + "*normalize(" + input.alias + ")+" + beta.alias;
+	if (!name.empty())
+		formula = name + "=" + formula;
+	tensor->alias = formula;
+	tensor->epsilon = epsilon;
+	tensor->momentum = momentum;
+	tensor->dependent_on(&input);
+	tensor->dependent_on(&gamma);
+	tensor->dependent_on(&beta);
+	auto result = new type::Output(input.dimensions, {tensor}, name.empty()? tensor->alias : name);
+	new type::Output(input.dimensions, {tensor}, prefix + "deviation"); //peers[1]
+	new type::Output({input.dimensions.back()}, {tensor}, prefix + "std_dev"); //peers[2]
+	new type::Output({input.dimensions.back()}, {tensor}, prefix + "moving_mean");
+	new type::Output({input.dimensions.back()}, {tensor}, prefix + "moving_variance");
+	return *result;
+}
+
+Tensor* type::BatchNormalizedLayer::generate_gradient(Tensor* out_gradient)
+{
+	auto back = new back::BatchNormalizedLayer;
+	back->alias = "back:" + alias;
+	back->inputs.push_back(out_gradient);
+	back->peers.push_back(clnet::Gradient(inputs[1], back)); //gamma_grad
+	back->peers.push_back(clnet::Gradient(inputs[2], back)); //beta_grad
+	back->peers.push_back(inputs[1]); //peers[2]: gamma
+	back->peers.push_back(inputs[0]); //peers[3]: in
+	back->peers.push_back(peers[0]); //peers[4]: out
+	auto in_gradient = clnet::Gradient(inputs[0], back);
+	back->peers.push_back(in_gradient); //peers[5]: in_gradient
+	back->peers.push_back(peers[1]); //peers[6]: deviation
+	back->peers.push_back(peers[2]); //peers[7]: std_dev
+	back->peers.push_back(clnet::Gradient(peers[1], back)); //peers[8]: deviation_grad
+	return back;
 }
 
 Tensor& DropOut(Tensor& data, float probability_dropout, std::string name)
@@ -750,6 +791,114 @@ Tensor* type::Reshape::generate_gradient(Tensor* out_gradient)
 	if (in_gradient == nullptr)
 		return nullptr;
 	return back;
+}
+
+Tensor* type::Activation::generate_gradient(Tensor* out_gradient)
+{
+	auto back = new back::Activation;
+	back->function = function;
+	back->alias = "gradient(" + alias + ")";
+	back->inputs.push_back(out_gradient);
+	back->peers.push_back(peers[0]); //peers[0]: out
+	auto in_gradient = clnet::Gradient(inputs[0], back);
+	back->peers.push_back(in_gradient); //peers[1]: in_gradient
+	return back;
+}
+
+Tensor& Softmax(Tensor& z, std::string name)
+{
+	auto tensor = new type::Softmax;
+	tensor->alias = name + (name.empty()? "" : "=") + "Softmax(" + z.alias + ")";
+	tensor->dependent_on(&z);
+	auto result = new type::Output(z.dimensions, {tensor}, name.empty()? "Softmax(" + z.alias + ")" : name);
+	return *result;
+}
+
+Tensor& Concatenate(vector<Tensor*> parts, int axis, std::string name)
+{
+	auto tensor = new type::Concatenate;
+	string formula = "Concatenate(" + parts[0]->alias;
+	for (size_t i = 1; i < parts.size(); i++)
+		formula.append(",").append(parts[i]->alias);
+	formula.append(")");
+
+	if (axis < 0)
+		axis += parts[0]->dimensions.size();
+	vector<int64> dims(parts[0]->dimensions);
+	for (size_t i = 1; i < parts.size(); i++)
+		dims[axis] += parts[0]->dimensions[axis];
+	auto result = new type::Output(dims, {tensor}, name.empty()? formula : name);
+
+	if (!name.empty())
+		formula = name + "=" + formula;
+	tensor->alias = formula;
+	tensor->axis = axis;
+	tensor->inputs = parts;
+	return *result;
+}
+
+Tensor* type::Concatenate::generate_gradient(Tensor* out_gradient)
+{
+	auto back = new type::Split;
+	back->alias = "back:" + alias;
+	back->axis = axis;
+	back->inputs.push_back(out_gradient);
+	for (auto input : inputs)
+		back->peers.push_back(clnet::Gradient(input, back)); //in_grad
+	return back;
+}
+
+vector<Tensor*> Split(Tensor& input, int number, int axis, string name)
+{
+	int size = (int) input.dimensions.back();
+	int length = size / number;
+	vector<int64> dims;
+	for (int i = 0; i < number; i++)
+		dims.push_back(length);
+	dims.back() += size % number;
+	return Split(input, dims, axis, name);
+}
+
+vector<Tensor*> Split(Tensor& input, vector<int64> lengths, int axis, std::string name)
+{
+	auto tensor = new type::Split;
+	string formula = "Split(" + input.alias + ",axis:" + to_string(axis) + "," + to_string(lengths.size()) + ")";
+	if (!name.empty())
+		formula = name + "=" + formula;
+	tensor->alias = formula;
+	tensor->inputs.push_back(&input);
+	if (axis < 0)
+		axis += input.dimensions.size();
+	tensor->axis = axis;
+	vector<int64> dims(input.dimensions);
+	for (size_t i = 0; i < lengths.size(); i++) {
+		dims[axis] = lengths[i];
+		new type::Output(dims, {tensor}, name + "(" + to_string(i) + ")");
+	}
+	return tensor->peers;
+}
+
+Tensor* type::Split::generate_gradient(Tensor* out_gradient)
+{
+	auto back = new type::Concatenate;
+	back->alias = "back:" + alias;
+	back->axis = axis;
+	for (auto output : peers)
+		back->inputs.push_back(clnet::Gradient(output)); //out_grad
+	peers.push_back(clnet::Gradient(inputs[0], back));
+	return back;
+}
+
+Tensor& Collector(Tensor& input, int64 size, string name)
+{
+	auto tensor = new type::Collector;
+	tensor->alias = "Collector(" + input.alias + ")";
+	tensor->inputs.push_back(&input);
+	tensor->shape_with({sizeof(int64) / sizeof(float)});
+	vector<int64> dims(input.dimensions);
+	dims.front() = size;
+	auto result = new type::Output(dims, {tensor}, name.empty()? tensor->alias : name + "=" + tensor->alias);
+	return *result;
 }
 
 }
