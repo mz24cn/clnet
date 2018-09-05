@@ -682,6 +682,7 @@ Tensor& ConvolutionKernel(Tensor& input/*NHWC*/, Tensor& weight, Tensor* bias, v
 {
 	auto tensor = new type::ConvolutionKernel;
 	tensor->activation = activation_function;
+	tensor->shape_with({ 3 }); //local_size[3]
 	string formula;
 	if (!name.empty())
 		formula = name + "=" + formula;
@@ -721,10 +722,7 @@ Tensor* type::ConvolutionKernel::generate_gradient(Tensor* out_gradient)
 	back->peers.push_back(clnet::Gradient(inputs[2], back)); //peers[3]: bias_grad
 	back->peers.push_back(inputs[0]); //peers[4]: input
 	back->peers.push_back(peers[0]); //peers[5]: output
-	auto back_input = new back::ConvolutionKernel::BackForInput;
-	back_input->peers.push_back(this);
-	back->peers.push_back(back_input); //peers[6]
-	back->peers.push_back(inputs[1]); //peers[7]: weight
+	back->peers.push_back(inputs[1]); //peers[6]: weight
 	return back;
 }
 

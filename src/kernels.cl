@@ -531,11 +531,11 @@ kernel void parallel_multiply(global float* out, const global float* weight, con
 		out[k] = softrelu(z + tmp[0]);
 }
 
-//Parallel: (batch_size * out_height * out_width * out_depth)
+//Parallel: ((batch_size * out_depth) * out_height * out_width)
 kernel void feed_forward_convolution_activation_relu(global float* out, const global float* weight/*out_depth * kernel_height * kernel_width * in_depth*/, const global float* bias,
 		const global float* in/*batch_size * in_height * in_width * in_depth*/, const int in_height, const int in_width, const int in_depth,
 		const int kernel_height, const int kernel_width, const int stride_height, const int stride_width,
-		const int padding_height, const int padding_width, const int batch_size)
+		const int padding_height, const int padding_width, const int batch_size, local float* weight_local, local float* in_local)
 {
 	const int out_height = get_global_size(1);
 	const int out_width = get_global_size(2);
@@ -546,6 +546,42 @@ kernel void feed_forward_convolution_activation_relu(global float* out, const gl
 	const int filter = get_global_id(0) % out_depth;
 	const int offset = ((n * out_height + rout) * out_width + cout) * out_depth + filter;
 
+	//Tiling on cube: (filter_local * group_width * in_width_local)
+	const int filter_local = get_local_id(0);
+	const int in_height_local = get_local_size(1);
+	const int in_width_local = get_local_size(2);
+
+	const int parallel_plane = in_height_local * in_width_local;
+	const int pos_plane = get_local_id(1) * in_width_local + get_local_id(2);
+	const int weight_filter_size = kernel_height * kernel_width * in_depth;
+	for (int i = pos_plane; i < weight_filter_size; i += parallel_plane) {
+		const int weight_depth = i % in_depth;
+		const int weight_column = (i / in_depth) % kernel_width;
+		const int weight_row = (i / in_depth / kernel_width) % kernel_height;
+		const int weight_global_index = ((filter * kernel_height + weight_row) * kernel_width + weight_column) * in_depth + weight_depth;
+		weight_local[filter_local * weight_filter_size + i] = weight[weight_global_index];
+	}
+
+	const int filter_size_local = get_local_size(0);
+	const int rmin = rout * stride_height, rlocal_max = in_height_local * stride_height + 2 * padding_height;
+	const int cmin = cout * stride_width, clocal_max = in_width_local * stride_width + 2 * padding_width;
+	for (int depth = filter_local; depth < in_depth; depth += filter_size_local) {
+		for (int rin = rmin, rlocal = get_local_id(1); rlocal < rlocal_max; rin += in_height_local, rlocal += in_height_local) {
+			for (int cin = cmin, clocal = get_local_id(2); clocal < clocal_max; cin += in_width_local, clocal += in_width_local) {
+				const int in_index_local = (rlocal * clocal_max + clocal) * in_depth + depth;
+				if (rin < padding_height || cin < padding_width) {
+					in_local[in_index_local] = 0;
+					continue;
+				}
+				const int in_index = ((n * in_height + rin - padding_height) * in_width + cin - padding_width) * in_depth + depth;
+				in_local[in_index_local] = in[in_index];
+			}
+		}
+	}
+	work_group_barrier(CLK_LOCAL_MEM_FENCE); //Finish in and weight loading by tiling
+
+	const int rlocal = get_local_id(1);
+	const int clocal = get_local_id(2);
 	float sum = bias != NULL? bias[filter] : 0;
 	// convolution operation for the image locations centered at (rout, cout)
 	for (int kr = 0; kr < kernel_height; kr++)
@@ -554,8 +590,12 @@ kernel void feed_forward_convolution_activation_relu(global float* out, const gl
 			int cin = cout * stride_width + kc - padding_width;
 			if (rin < 0 || rin >= in_height || cin < 0 || cin >= in_width)
 				continue;
-			int weight_index = ((filter * kernel_height + kr) * kernel_width + kc) * in_depth;
-			int in_index = ((n * in_height + rin) * in_width + cin) * in_depth;
+//			int weight_index = ((filter * kernel_height + kr) * kernel_width + kc) * in_depth;
+//			int in_index = ((n * in_height + rin) * in_width + cin) * in_depth;
+			int rin_local = rlocal * stride_height + kr;
+			int cin_local = clocal * stride_width + kc;
+			int weight_index_local = ((filter_local * kernel_height + kr) * kernel_width + kc) * in_depth;
+			int in_index_local = (rin_local * clocal_max + cin_local) * in_depth;
 #ifdef CONVOLUTION_VECTOR
 			int channel = 16;
 			float16 sum16 = 0;
@@ -569,31 +609,96 @@ kernel void feed_forward_convolution_activation_relu(global float* out, const gl
 				sum += weight[weight_index++] * in[in_index++];
 #else
 			for (int channel = 0; channel < in_depth; channel++) //cross channel
-				sum += weight[weight_index++] * in[in_index++];
+				sum += weight_local[weight_index_local++] * in_local[in_index_local++];
 #endif
 		}
 	out[offset] = relu(sum);
 }
 
-//Parallel: (out_depth * kernel_height * kernel_width * in_depth)
-kernel void back_propagate_convolution_relu_gradient(global float* weight_grad/*out_depth * kernel_height * kernel_width * in_depth*/,
+//Parallel: ((in_depth * out_depth) * kernel_height * kernel_width)
+kernel void back_propagate_convolution_relu_gradient_for_weight(global float* weight_grad/*out_depth * kernel_height * kernel_width * in_depth*/,
 		global float* bias_grad/*out_depth*/, const global float* in, const global float* out,
 		const global float* out_grad, const int in_height, const int in_width, const int in_depth,
 		const int out_height, const int out_width, const int out_depth, const int stride_height, const int stride_width,
-		const int padding_height, const int padding_width, const int batch_size)
+		const int padding_height, const int padding_width, const int batch_size/*, const int local_height, const int local_width, const int local_depth,
+		local float* out_local, local float* out_grad_local, local float* in_local*/) //Tiling version
 {
 	const int kernel_height = get_global_size(1);
 	const int kernel_width = get_global_size(2);
-	const int filter = get_global_id(0) / in_depth;
 	const int kr = get_global_id(1);
 	const int kc = get_global_id(2);
+
+	const int filter = get_global_id(0) / in_depth;
 	const int kd = get_global_id(0) % in_depth;
+//	const int filter = get_global_id(0) / local_depth / in_depth * local_depth + (get_global_id(0) % local_depth);
+//	const int kd = (get_global_id(0) / local_depth) % in_depth;
 
 	const int GID = ((filter * kernel_height + kr) * kernel_width + kc) * in_depth + kd;
 	float sum_weight_grad = 0, sum_bias_grad = 0;
 	int in_offset = kd;
 	int out_offset = filter;
+
+//	const int group_depth = get_local_size(0);
+//	const int group_height = get_local_size(1);
+//	const int group_width = get_local_size(2);
+//	const int parallel_plane = group_height * group_width * group_depth / local_depth;
+//	const int pos = ((get_local_id(0) / local_depth) * group_height + get_local_id(1)) * group_width + get_local_id(2);
+//	const int out_filter_size = local_height * local_width * local_depth;
+//	const int rlocal_max = local_height * stride_height + 2 * padding_height;
+//	const int clocal_max = local_width * stride_width + 2 * padding_width;
+//	const int kd_local = kd % (group_depth / local_depth);
+
 	for (int n = 0; n < batch_size; n++, in_offset += in_height * in_width * in_depth, out_offset += out_height * out_width * out_depth)
+//		for (int rout = 0; rout < out_height; rout += local_height)
+//			for (int cout = 0; cout < out_width; cout += local_width) {
+//				const int rmin = rout * stride_height;
+//				const int cmin = cout * stride_width;
+//				work_group_barrier(CLK_LOCAL_MEM_FENCE); //Prepare to update local memory
+//				for (int i = pos; i < out_filter_size; i += parallel_plane) {
+//					const int out_column_local = (i / local_depth) % local_width;
+//					const int out_row_local = i / local_depth / local_width;
+//					const int out_index = ((n * out_height + rout + out_row_local) * out_width + cout + out_column_local) * out_depth + filter;
+//					const int out_index_local = (out_row_local * local_width + out_column_local) * local_depth + (filter % local_depth);
+//					out_local[out_index_local] = out[out_index];
+//					out_grad_local[out_index_local] = out_grad[out_index];
+//				}
+//
+//				for (int rin_local = get_local_id(1), rin = rmin + rin_local - padding_height; rin_local < rlocal_max; rin += group_height, rin_local += group_height) {
+//					for (int cin_local = get_local_id(2), cin = cmin + cin_local - padding_width; cin_local < clocal_max; cin += group_width, cin_local += group_width) {
+//						const int in_index_local = (rin_local * clocal_max + cin_local) * group_depth / local_depth + kd_local;
+//						if (rin < 0 || cin < 0) {
+//							in_local[in_index_local] = 0;
+//							continue;
+//						}
+//						const int in_index = ((n * in_height + rin) * in_width + cin) * in_depth + kd;
+//						in_local[in_index_local] = in[in_index];
+//					}
+//				}
+//				work_group_barrier(CLK_LOCAL_MEM_FENCE); //Finish in and weight loading by tiling
+//
+//				for (int rlocal = 0; rlocal < local_height; rlocal++) {
+//					int rin_local = rlocal * stride_height + kr;
+//					int rin = rmin + rin_local - padding_height;
+//					if (rin < 0 || rin >= in_height)
+//						continue;
+//					for (int clocal = 0; clocal < local_width; clocal++) {
+//						int cin_local = clocal * stride_width + kc;
+//						int cin = cmin + cin_local - padding_width;
+//						if (cin < 0 || cin >= in_width)
+//							continue;
+//
+//						int in_index_local = (rin_local * clocal_max + cin_local) * group_depth / local_depth + kd_local;
+//						int out_index_local = (rlocal * local_width + clocal) * local_depth + (filter % local_depth);
+//						float out_gradient = out_grad_local[out_index_local];
+//						float func_grad = relu_gradient(out_local[out_index_local]);
+//						float data_local = in_local[in_index_local];
+//						float gradient = func_grad * out_gradient;
+//						sum_bias_grad += gradient;
+//						sum_weight_grad += gradient * data_local;
+//					}
+//				}
+//			}
+
 		for (int rout = 0; rout < out_height; rout++) {
 			int rin = rout * stride_height + kr - padding_height;
 			if (rin < 0 || rin >= in_height)
@@ -612,6 +717,7 @@ kernel void back_propagate_convolution_relu_gradient(global float* weight_grad/*
 				sum_weight_grad += gradient * data;
 			}
 		}
+
 	weight_grad[GID] += sum_weight_grad;
 	if (kr == 0 && kc == 0 && kd == 0 && bias_grad != NULL)
 		bias_grad[filter] += sum_bias_grad;
@@ -621,7 +727,8 @@ kernel void back_propagate_convolution_relu_gradient(global float* weight_grad/*
 kernel void back_propagate_convolution_relu_gradient_for_input(global float* in_grad, const global float* weight, const global float* out,
 		const global float* out_grad, const int kernel_height, const int kernel_width, const int in_depth,
 		const int out_height, const int out_width, const int out_depth, const int stride_height, const int stride_width,
-		const int padding_height, const int padding_width, const int batch_size)
+		const int padding_height, const int padding_width, const int batch_size/*, local float* out_local, local float* out_grad_local, local float* weight_local,
+		const int local_weight_depth, const int local_height, const int local_width, const int local_depth*/)
 {
 	const int in_height = get_global_size(1);
 	const int in_width = get_global_size(2);

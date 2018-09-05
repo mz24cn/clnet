@@ -35,13 +35,14 @@ struct DeviceInstance {
 	std::vector<cl::Event> precondition_events;
 
 	int work_group_size;
+	int local_memory_size;
 	cl::CommandQueue queue;
 	std::unordered_map<Tensor*, cl::Buffer> buffers;
 	std::unordered_map<Tensor*, cl::Event> events;
 	std::unordered_map<Tensor*, float*> pointers;
 	std::unordered_map<Tensor*, std::vector<cl::Kernel>> kernels;
 
-	explicit DeviceInstance() : ID(-1), parameters_state(0), gradients_state(0), work_group_size(0) {}
+	explicit DeviceInstance() : ID(-1), parameters_state(0), gradients_state(0), work_group_size(0), local_memory_size(0) {}
 	void initialize();
 	void free();
 

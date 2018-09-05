@@ -85,6 +85,7 @@ void DeviceInstance::initialize()
 			power2 <<= 1;
 		work_group_size = power2 / 2;
 	}
+	local_memory_size = device.getInfo<CL_DEVICE_LOCAL_MEM_SIZE>();
 
 	cl::Context context(device);
 	reload_kernels(device, context, *this);
@@ -208,6 +209,52 @@ void back::Reshape::initialize(DeviceInstance* I)
 back::Reshape::~Reshape()
 {
 	pointer = nullptr;
+}
+
+void find_factors(int number, std::set<int>& factors)
+{
+	for (int i = 2; i <= number / 2; i++)
+		if ((number % i) == 0)
+			factors.insert(i);
+	factors.insert(number);
+}
+
+void type::ConvolutionKernel::initialize(DeviceInstance* I)
+{
+	Tensor::initialize(I);
+	if (I == nullptr)
+		return;
+	auto input = inputs[0], output = peers[0], weight = inputs[1];
+	int in_height = input->dimensions[1], in_width = input->dimensions[2], in_depth = input->dimensions[3];
+	int kernel_height = weight->dimensions[1], kernel_width = weight->dimensions[2];
+	int padding_height = (output->dimensions[1] * stride_size[0] - in_height + weight->dimensions[1]) / 2;
+	int padding_weight = (output->dimensions[2] * stride_size[1] - in_width + weight->dimensions[2]) / 2;
+
+	set<int> factors[3];
+	find_factors(output->dimensions[3], factors[0]);
+	find_factors(output->dimensions[1], factors[1]);
+	find_factors(output->dimensions[2], factors[2]);
+
+	float max = 0;
+	auto local_size = reinterpret_cast<int*>(I->pointers[this]);
+	for (auto depth : factors[0])
+		for (auto height : factors[1])
+			for (auto width : factors[2]) {
+				int local_group_size = depth * height * width;
+				if (local_group_size > I->work_group_size)
+					continue;
+				int weight_local_size = sizeof(float) * kernel_height * kernel_width * in_depth * depth;
+				int input_local_size = sizeof(float) * (height * stride_size[0] + 2 * padding_height) * (width * stride_size[1] + 2 * padding_weight) * in_depth;
+				if (weight_local_size + input_local_size > I->local_memory_size) //CL_OUT_OF_RESOURCES
+					continue;
+				float score = local_group_size - ((depth - height) * (depth - height) + (height - width) * (height - width) + (width - depth) * (width - depth)) / 10.0f; //make them close as soon as possible
+				if (score > max) {
+					local_size[0] = depth;
+					local_size[1] = height;
+					local_size[2] = width;
+ 					max = score;
+				}
+			}
 }
 
 void DeviceInstance::free()

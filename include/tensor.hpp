@@ -270,6 +270,7 @@ struct ConvolutionKernel : Tensor {
 	std::string activation;
 	int stride_size[2];
 
+	virtual void initialize(DeviceInstance* I) override;
 	virtual Tensor* generate_gradient(Tensor* out_gradient = nullptr) override;
 	virtual std::string generate_source_code(DeviceInstance& I) override;
 	virtual void run(DeviceInstance& I) override;
@@ -415,9 +416,6 @@ struct DropOut : Tensor {
 };
 
 struct ConvolutionKernel : Tensor {
-	struct BackForInput : Tensor {
-		virtual std::string generate_source_code(DeviceInstance& I) override;
-	};
 	virtual std::string generate_source_code(DeviceInstance& I) override;
 	virtual void run(DeviceInstance& I) override;
 };

@@ -655,16 +655,33 @@ void type::XavierNormalDistributionInitializer::run_globally(DeviceInstance& I)
 {
 	default_random_engine generator;
 	for (auto tensor : peers) {
-		int fan_in = tensor->dimensions.front(); //TODO
-		normal_distribution<float> distribution(mu, sqrt(sigma / fan_in));
-		if (dynamic_cast<Weight*>(tensor) != nullptr) { //TODO
+		if (dynamic_cast<Weight*>(tensor) != nullptr) {
 			if (dynamic_cast<type::BatchNormalizedLayer*>(tensor->peers[0]) != nullptr)
 				for (int64 i = 0; i < tensor->volume; i++)
 					tensor->pointer[i] = 1.0f;
-			else
-				for (int64 hidden = 0; hidden < tensor->dimensions.back(); hidden++)
-					for (int64 k = 0; k < tensor->dimensions.front(); k++)
-						tensor->pointer[k * tensor->dimensions.back() + hidden] = (float) distribution(generator);
+//			else if (dynamic_cast<type::ConvolutionKernel*>(tensor->peers[0]) != nullptr) {
+//				int64 fan_in = tensor->dimensions.front(), fan_out = tensor->volume / fan_in;
+//				normal_distribution<float> distribution(mu, sqrt(sigma / fan_in));
+//				for (int64 hidden = 0; hidden < fan_out; hidden++)
+//					for (int64 k = 0; k < fan_in; k++)
+//						tensor->pointer[k * fan_out + hidden] = (float) distribution(generator);
+//
+////				int64 fan_in = tensor->dimensions[1] * tensor->dimensions[2], channel = tensor->dimensions.back(); //TODO
+////				normal_distribution<float> distribution(mu, sqrt(sigma / fan_in));
+//////				for (float *p = tensor->pointer, *end = p + tensor->volume; p < end; p++)
+//////					*p = (float) distribution(generator);
+////				for (int64 c = 0; c < channel; c++)
+////					for (int64 k = 0; k < fan_in; k++)
+////						for (int64 filter = 0; filter < tensor->dimensions.front(); filter++)
+////							tensor->pointer[(filter * fan_in + k) * channel + c] = (float) distribution(generator);
+//			}
+			else {
+				int64 fan_in = tensor->dimensions.front(), fan_out = tensor->dimensions.back();
+				normal_distribution<float> distribution(mu, sqrt(sigma / fan_in));
+				for (int64 hidden = 0; hidden < fan_out; hidden++)
+					for (int64 k = 0; k < fan_in; k++)
+						tensor->pointer[k * fan_out + hidden] = (float) distribution(generator);
+			}
 		}
 		else if (dynamic_cast<Bias*>(tensor) == nullptr)
 			for (float *p = tensor->pointer, *end = p + tensor->volume; p < end; p++)
@@ -1103,23 +1120,20 @@ void type::ConvolutionKernel::run(DeviceInstance& I)
 	kernel.setArg(12, padding_weight);
 	kernel.setArg(13, batch_size);
 
+	auto local_size = reinterpret_cast<int*>(I.pointers[this]);
+	cl::LocalSpaceArg weightMem = cl::Local(sizeof(float) * kernel_height * kernel_width * in_depth * local_size[0]);
+	cl::LocalSpaceArg inMem = cl::Local(sizeof(float) * (local_size[1] * stride_size[0] + 2 * padding_height) * (local_size[2] * stride_size[1] + 2 * padding_weight) * in_depth);
+	kernel.setArg(14, weightMem);
+	kernel.setArg(15, inMem);
+
 	cl::NDRange global(batch_size * output->dimensions[3], output->dimensions[1], output->dimensions[2]);
-	I.queue.enqueueNDRangeKernel(kernel, cl::NullRange, global, cl::NullRange, &I.precondition_events, &I.events[output]);
+	cl::NDRange local(local_size[0], local_size[1], local_size[2]);
+	I.queue.enqueueNDRangeKernel(kernel, cl::NullRange, global, local, &I.precondition_events, &I.events[output]);
 }
 
 string back::ConvolutionKernel::generate_source_code(DeviceInstance& I)
 {
-	string code = kernels_source["back_propagate_convolution_relu_gradient"];
-	auto& activation = static_cast<type::ConvolutionKernel*>(peers[0])->activation;
-	if (activation != "relu")
-		replace_all(code, "relu", activation);
-
-	return code;
-}
-
-string back::ConvolutionKernel::BackForInput::generate_source_code(DeviceInstance& I)
-{
-	string code = kernels_source["back_propagate_convolution_relu_gradient_for_input"];
+	string code = kernels_source["back_propagate_convolution_relu_gradient_for_weight"] + "\n" + kernels_source["back_propagate_convolution_relu_gradient_for_input"];
 	auto& activation = static_cast<type::ConvolutionKernel*>(peers[0])->activation;
 	if (activation != "relu")
 		replace_all(code, "relu", activation);
@@ -1135,9 +1149,13 @@ void back::ConvolutionKernel::run(DeviceInstance& I)
 	int padding_weight = (out_gradient->dimensions[2] * tensor->stride_size[1] - input->dimensions[2] + weight_gradient->dimensions[2]) / 2;
 	int in_height = input->dimensions[1], in_width = input->dimensions[2], in_depth = input->dimensions[3];
 	int out_height = output->dimensions[1], out_width = output->dimensions[2], out_depth = output->dimensions[3];
-	int weight_height = weight_gradient->dimensions[1], weight_width = weight_gradient->dimensions[2];
+	int kernel_height = weight_gradient->dimensions[1], kernel_width = weight_gradient->dimensions[2];
 	int batch_size = input->dimensions[0];
+//	int local_depth = 10; //Tiling version
 	{
+//	cl::LocalSpaceArg outMem = cl::Local(sizeof(float) * 14 * 14 * local_depth);
+//	cl::LocalSpaceArg outGradMem = cl::Local(sizeof(float) * 14 * 14 * local_depth);
+//	cl::LocalSpaceArg inMem = cl::Local(sizeof(float) * (14 * tensor->stride_size[0] + 2 * padding_height) * (14 * tensor->stride_size[1] + 2 * padding_weight) * min(in_depth, 4));
 	auto& kernel = prepare_for_running_kernel(this, I);
 	kernel.setArg(0, I.buffers[weight_gradient]);
 	kernel.setArg(1, I.buffers[bias_gradient]);
@@ -1155,22 +1173,32 @@ void back::ConvolutionKernel::run(DeviceInstance& I)
 	kernel.setArg(13, padding_height);
 	kernel.setArg(14, padding_weight);
 	kernel.setArg(15, batch_size);
+//	kernel.setArg(16, 14);
+//	kernel.setArg(17, 14);
+//	kernel.setArg(18, local_depth);
+//	kernel.setArg(19, outMem);
+//	kernel.setArg(20, outGradMem);
+//	kernel.setArg(21, inMem);
 
-	cl::NDRange global(out_depth * in_depth, weight_height, weight_width);
-	I.queue.enqueueNDRangeKernel(kernel, cl::NullRange, global, cl::NullRange, &I.precondition_events, &I.events[weight_gradient]);
+	cl::NDRange global(out_depth * in_depth, kernel_height, kernel_width);
+//	cl::NDRange local(min(in_depth, 4) * local_depth, kernel_height, kernel_width); //TODO
+	I.queue.enqueueNDRangeKernel(kernel, cl::NullRange, global, cl::NullRange/*local*/, &I.precondition_events, &I.events[weight_gradient]);
 	if (bias_gradient != NULL)
 		I.events[bias_gradient] = I.events[weight_gradient];
 	}
 	if (in_gradient == nullptr)
 		return;
 	{
-	auto& kernel = prepare_for_running_kernel(peers[6], I);
+//	cl::LocalSpaceArg outMem = cl::Local(sizeof(float) * 14 * 14 * local_depth);
+//	cl::LocalSpaceArg outGradMem = cl::Local(sizeof(float) * 14 * 14 * local_depth);
+//	cl::LocalSpaceArg weightMem = cl::Local(sizeof(float) * kernel_height * kernel_width * 100);
+	auto& kernel = prepare_for_running_kernel(this, I, 1);
 	kernel.setArg(0, I.buffers[in_gradient]);
-	kernel.setArg(1, I.buffers[peers[7]]); //weight
+	kernel.setArg(1, I.buffers[peers[6]]); //weight
 	kernel.setArg(2, I.buffers[output]);
 	kernel.setArg(3, I.buffers[out_gradient]);
-	kernel.setArg(4, weight_height);
-	kernel.setArg(5, weight_width);
+	kernel.setArg(4, kernel_height);
+	kernel.setArg(5, kernel_width);
 	kernel.setArg(6, in_depth);
 	kernel.setArg(7, out_height);
 	kernel.setArg(8, out_width);
@@ -1180,9 +1208,17 @@ void back::ConvolutionKernel::run(DeviceInstance& I)
 	kernel.setArg(12, padding_height);
 	kernel.setArg(13, padding_weight);
 	kernel.setArg(14, batch_size);
+//	kernel.setArg(15, outMem);
+//	kernel.setArg(16, outGradMem);
+//	kernel.setArg(17, weightMem);
+//	kernel.setArg(18, 100);
+//	kernel.setArg(19, 14);
+//	kernel.setArg(20, 14);
+//	kernel.setArg(21, local_depth);
 
 	cl::NDRange global(batch_size * in_depth, in_height, in_width);
-	I.queue.enqueueNDRangeKernel(kernel, cl::NullRange, global, cl::NullRange, &I.precondition_events, &I.events[in_gradient]);
+//	cl::NDRange local(in_depth > 1? 5 : in_depth, in_height, in_width); //TODO
+	I.queue.enqueueNDRangeKernel(kernel, cl::NullRange, global, cl::NullRange/*local*/, &I.precondition_events, &I.events[in_gradient]);
 	}
 }
 
