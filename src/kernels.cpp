@@ -1471,9 +1471,12 @@ void type::Collector::run(DeviceInstance& I) {
 	I.precondition_events.clear();
 	I.precondition_events.push_back(I.events[input]);
 	auto& offset = *reinterpret_cast<atomic<int64>*>(I.pointers[this]);
-	I.queue.enqueueCopyBuffer(I.buffers[input], I.buffers[output], 0, offset * sizeof(float), input->volume * sizeof(float), &I.precondition_events, &I.events[output]);
-	offset += input->volume;
-	offset.compare_exchange_strong(output->volume, 0);
+	int64 current = offset;
+	while (!offset.compare_exchange_weak(current, current + input->volume))
+		current = offset;
+	I.queue.enqueueCopyBuffer(I.buffers[input], I.buffers[output], 0, current * sizeof(float), input->volume * sizeof(float), &I.precondition_events, &I.events[output]);
+	if (output->volume - offset < input->volume) //this is the last one, reset the offset
+		offset = 0;
 }
 
 }
