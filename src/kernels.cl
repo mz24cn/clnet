@@ -532,7 +532,7 @@ kernel void parallel_multiply(global float* out, const global float* weight, con
 }
 
 //Parallel: ((batch_size * out_depth) * out_height * out_width)
-kernel void feed_forward_convolution_activation_relu(global float* out, const global float* weight/*out_depth * kernel_height * kernel_width * in_depth*/, const global float* bias,
+kernel void feed_forward_convolution_activation_relu_tiling(global float* out, const global float* weight/*out_depth * kernel_height * kernel_width * in_depth*/, const global float* bias,
 		const global float* in/*batch_size * in_height * in_width * in_depth*/, const int in_height, const int in_width, const int in_depth,
 		const int kernel_height, const int kernel_width, const int stride_height, const int stride_width,
 		const int padding_height, const int padding_width, const int batch_size, local float* weight_local, local float* in_local)
@@ -569,7 +569,7 @@ kernel void feed_forward_convolution_activation_relu(global float* out, const gl
 		for (int rin = rmin, rlocal = get_local_id(1); rlocal < rlocal_max; rin += in_height_local, rlocal += in_height_local) {
 			for (int cin = cmin, clocal = get_local_id(2); clocal < clocal_max; cin += in_width_local, clocal += in_width_local) {
 				const int in_index_local = (rlocal * clocal_max + clocal) * in_depth + depth;
-				if (rin < padding_height || cin < padding_width) {
+				if (rin - padding_height < 0 || cin - padding_width < 0 || rin - padding_height >= in_height || cin - padding_width >= in_width) {
 					in_local[in_index_local] = 0;
 					continue;
 				}
@@ -590,12 +590,56 @@ kernel void feed_forward_convolution_activation_relu(global float* out, const gl
 			int cin = cout * stride_width + kc - padding_width;
 			if (rin < 0 || rin >= in_height || cin < 0 || cin >= in_width)
 				continue;
-//			int weight_index = ((filter * kernel_height + kr) * kernel_width + kc) * in_depth;
-//			int in_index = ((n * in_height + rin) * in_width + cin) * in_depth;
+#ifdef CONVOLUTION_VECTOR
+			int weight_index = ((filter * kernel_height + kr) * kernel_width + kc) * in_depth;
+			int in_index = ((n * in_height + rin) * in_width + cin) * in_depth;
+			int channel = 16;
+			float16 sum16 = 0;
+			for (; channel <= in_depth; channel += 16, weight_index += 16, in_index += 16)
+				sum16 += (*(global float16*) (weight + weight_index)) * (*(global float16*) (in + in_index)); //error CL_OUT_OF_RESOURCES on NVIDIA GTX1050Ti, driver version 382.05
+			float8 sum8 = sum16.lo + sum16.hi;
+			float4 sum4 = sum8.lo + sum8.hi;
+			float2 sum2 = sum4.lo + sum4.hi;
+			sum += sum2.lo + sum2.hi;
+			for (channel -= 16; channel < in_depth; channel++) //cross channel
+				sum += weight[weight_index++] * in[in_index++];
+#else
 			int rin_local = rlocal * stride_height + kr;
 			int cin_local = clocal * stride_width + kc;
 			int weight_index_local = ((filter_local * kernel_height + kr) * kernel_width + kc) * in_depth;
 			int in_index_local = (rin_local * clocal_max + cin_local) * in_depth;
+			for (int channel = 0; channel < in_depth; channel++) //cross channel
+				sum += weight_local[weight_index_local++] * in_local[in_index_local++];
+#endif
+		}
+	out[offset] = relu(sum);
+}
+
+//Parallel: (batch_size * out_height * out_width * out_depth)
+kernel void feed_forward_convolution_activation_relu(global float* out, const global float* weight/*out_depth * kernel_height * kernel_width * in_depth*/, const global float* bias,
+		const global float* in/*batch_size * in_height * in_width * in_depth*/, const int in_height, const int in_width, const int in_depth,
+		const int kernel_height, const int kernel_width, const int stride_height, const int stride_width,
+		const int padding_height, const int padding_width, const int batch_size)
+{
+	const int out_height = get_global_size(1);
+	const int out_width = get_global_size(2);
+	const int out_depth = get_global_size(0) / batch_size;
+	const int n = get_global_id(0) / out_depth; //batch
+	const int rout = get_global_id(1);
+	const int cout = get_global_id(2);
+	const int filter = get_global_id(0) % out_depth;
+	const int offset = ((n * out_height + rout) * out_width + cout) * out_depth + filter;
+
+	float sum = bias != NULL? bias[filter] : 0;
+	// convolution operation for the image locations centered at (rout, cout)
+	for (int kr = 0; kr < kernel_height; kr++)
+		for (int kc = 0; kc < kernel_width; kc++) {
+			int rin = rout * stride_height + kr - padding_height;
+			int cin = cout * stride_width + kc - padding_width;
+			if (rin < 0 || rin >= in_height || cin < 0 || cin >= in_width)
+				continue;
+			int weight_index = ((filter * kernel_height + kr) * kernel_width + kc) * in_depth;
+			int in_index = ((n * in_height + rin) * in_width + cin) * in_depth;
 #ifdef CONVOLUTION_VECTOR
 			int channel = 16;
 			float16 sum16 = 0;
@@ -609,7 +653,7 @@ kernel void feed_forward_convolution_activation_relu(global float* out, const gl
 				sum += weight[weight_index++] * in[in_index++];
 #else
 			for (int channel = 0; channel < in_depth; channel++) //cross channel
-				sum += weight_local[weight_index_local++] * in_local[in_index_local++];
+				sum += weight[weight_index++] * in[in_index++];
 #endif
 		}
 	out[offset] = relu(sum);
@@ -827,8 +871,8 @@ kernel void back_propagate_max_pooling(global float* in_grad, const global float
 }
 
 //Parallel: (out_height * out_width * out_depth)
-kernel void feed_forward_average_pooling(global float* out, const global float* in/*batch_size * depth * in_height * in_width*/,
-		local float* tmp, const int depth, const int in_height, const int in_width,
+kernel void feed_forward_average_pooling(global float* out, const global float* in/*batch_size * in_depth * in_height * in_width*/,
+		const int in_height, const int in_width, const int in_depth,
 		const int pool_height, const int pool_width, const int stride_height, const int stride_width,
 		const int padding_height, const int padding_width, const int batch_size)
 {
@@ -840,7 +884,7 @@ kernel void feed_forward_average_pooling(global float* out, const global float* 
 	int cout = (GID / filter) % out_width;
 
 	for (int n = 0; n < batch_size; n++)
-		for (int channel = 0; channel < depth; channel++) { //2d pooling  is not cross channel
+		for (int channel = 0; channel < in_depth; channel++) { //2d pooling  is not cross channel
 			float sum = 0;
 			for (int pr = 0; pr < pool_height; pr++)
 				for (int pc = 0; pc < pool_width; pc++) {
@@ -848,16 +892,16 @@ kernel void feed_forward_average_pooling(global float* out, const global float* 
 					int cin = cout + pc - padding_width;
 					if (rin < 0 || rin >= in_height || cin < 0 || cin >= in_width)
 						continue;
-					int in_index = n * depth * in_width * in_height + channel * in_width * in_height + rin * stride_height * in_width + cin * stride_width;
+					int in_index = n * in_depth * in_width * in_height + channel * in_width * in_height + rin * stride_height * in_width + cin * stride_width;
 					sum += in[in_index];
 				}
 			out[n * get_global_size(0) + GID] = sum / pool_height / pool_width;
 		}
 }
 
-//Parallel: (depth * in_height * in_width)
+//Parallel: (batch_size * in_height * in_width * in_depth)
 kernel void back_propagate_average_pooling(global float* in_grad, const global float* out_grad, const global float* out,
-		local float* tmp, const int depth, const int in_height, const int in_width,
+		const int in_height, const int in_width, const int in_depth,
 		const int pool_height, const int pool_width, const int stride_height, const int stride_width,
 		const int padding_height, const int padding_width, const int batch_size)
 {
@@ -870,7 +914,7 @@ kernel void back_propagate_average_pooling(global float* in_grad, const global f
 	
 	for (int n = 0; n < batch_size; n++) {
 		float gradient = 0;
-		int in_index = n * depth * out_width * out_height + rout * in_width + in_height;
+		int in_index = n * in_depth * out_width * out_height + rout * in_width + in_height;
 		in_grad[in_index] = 0;
 		for (int pr = 0; pr < pool_height; pr += stride_height)
 			for (int pc = 0; pc < pool_width; pc += stride_width) {
@@ -878,7 +922,7 @@ kernel void back_propagate_average_pooling(global float* in_grad, const global f
 				int cin = cout - pc + padding_width;
 				if (rin < 0 || rin >= out_height || cin < 0 || cin >= out_width)
 					continue;
-				int out_index = n * depth * out_width * out_height + filter * out_width * out_height + rin * out_width + cin;
+				int out_index = n * in_depth * out_width * out_height + filter * out_width * out_height + rin * out_width + cin;
 				in_grad[in_index] += out_grad[out_index] / pool_height / pool_width;
 			}
 	}

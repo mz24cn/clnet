@@ -27,7 +27,8 @@ int reverse_int(int i) {
 }
 
 //revised from https://github.com/fengbingchun/NN_Test/blob/master/demo/DatasetToImage/funset.cpp
-Tensor* read_mnist_images(string file, string name, int alignment_size) {
+Tensor* read_mnist_images(string file, string name, int alignment_size)
+{
 	ifstream ifs(file, ios::binary);
 	if (!ifs)
 		throw runtime_error("failed to open " + file);
@@ -60,7 +61,8 @@ Tensor* read_mnist_images(string file, string name, int alignment_size) {
 	return tensor;
 }
 
-Tensor* read_mnist_labels(string file, string name, int alignment_size) {
+Tensor* read_mnist_labels(string file, string name, int alignment_size)
+{
 	ifstream ifs(file, ios::binary);
 	if (!ifs)
 		throw runtime_error("failed to open " + file);
@@ -146,4 +148,63 @@ void generate_24bits_bmp(unsigned char* pData, int width, int height, const char
 	fwrite(&bih, sizeof(BMPINFOHEADER), 1, fp);
 	fwrite(pData, 1, size, fp);
 	fclose(fp);
+}
+
+void read_cifar10_images_and_labels(string file, int alignment_size, int offset, int num_of_images, Tensor* images, Tensor* labels)
+{
+	ifstream ifs(file, ios::binary);
+	if (!ifs)
+		throw runtime_error("failed to open " + file);
+
+	char* buffer = new char[(32 * 32 * 3 + 1) * num_of_images];
+	ifs.read(buffer, (32 * 32 * 3 + 1) * num_of_images);
+	ifs.close();
+
+	int num = (num_of_images + alignment_size - 1) / alignment_size * alignment_size;
+	float *pI = images->pointer + offset * 32 * 32 * 3, *pL = labels->pointer + offset;
+	for (int i = 0; i < num_of_images; ++i) {
+		*pL++ = (float) (unsigned char) buffer[(32 * 32 * 3 + 1) * i];
+		for (int r = 0; r < 32; ++r) {
+			for (int c = 0; c < 32; ++c) {
+				int n = (32 * 32 * 3 + 1) * i + r * 32 + c;
+				*pI++ = (float) (unsigned char) buffer[n + 1];
+				*pI++ = (float) (unsigned char) buffer[n + 1 + 32 * 32];
+				*pI++ = (float) (unsigned char) buffer[n + 1 + 32 * 32 * 2];
+			}
+		}
+	}
+	memcpy(pI, images->pointer, (num - num_of_images) * 32 * 32 * 3 * sizeof(float));
+	memcpy(pL, labels->pointer, (num - num_of_images) * sizeof(float));
+	delete buffer;
+}
+
+void read_cifar100_images_and_labels(string file, int alignment_size, bool use_fine_label, int num_of_images, Tensor* images, Tensor* labels)
+{
+	ifstream ifs(file, ios::binary);
+	if (!ifs)
+		throw runtime_error("failed to open " + file);
+
+	char* buffer = new char[(32 * 32 * 3 + 2) * num_of_images];
+	ifs.read(buffer, (32 * 32 * 3 + 2) * num_of_images);
+	ifs.close();
+
+	int num = (num_of_images + alignment_size - 1) / alignment_size * alignment_size;
+	float *pI = images->pointer, *pL = labels->pointer;
+	for (int i = 0; i < num_of_images; ++i) {
+		if (use_fine_label)
+			*pL++ = (float) (unsigned char) buffer[(32 * 32 * 3 + 2) * i + 1]; //fine label
+		else
+			*pL++ = (float) (unsigned char) buffer[(32 * 32 * 3 + 2) * i]; //coarse label
+		for (int r = 0; r < 32; ++r) {
+			for (int c = 0; c < 32; ++c) {
+				int n = (32 * 32 * 3 + 2) * i + r * 32 + c;
+				*pI++ = (float) (unsigned char) buffer[n + 2];
+				*pI++ = (float) (unsigned char) buffer[n + 2 + 32 * 32];
+				*pI++ = (float) (unsigned char) buffer[n + 2 + 32 * 32 * 2];
+			}
+		}
+	}
+	memcpy(pI, images->pointer, (num - num_of_images) * 32 * 32 * 3 * sizeof(float));
+	memcpy(pL, labels->pointer, (num - num_of_images) * sizeof(float));
+	delete buffer;
 }

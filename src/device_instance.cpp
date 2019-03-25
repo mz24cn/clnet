@@ -88,8 +88,6 @@ void DeviceInstance::initialize()
 	local_memory_size = device.getInfo<CL_DEVICE_LOCAL_MEM_SIZE>();
 
 	cl::Context context(device);
-	reload_kernels(device, context, *this);
-
 #if CL_HPP_TARGET_OPENCL_VERSION < 200
 	queue = cl::CommandQueue(context, device);
 #else
@@ -99,6 +97,8 @@ void DeviceInstance::initialize()
 	for (auto tensor : Tensor::ALL)
 		if (ID >= 0 || dynamic_cast<type::Weight*>(tensor) != nullptr || dynamic_cast<type::Bias*>(tensor) != nullptr || dynamic_cast<back::Gradient*>(tensor) != nullptr)
 			tensor->initialize(this);
+
+	reload_kernels(device, context, *this); //Considering resource limitation, generate source code after finishing initialization
 }
 
 DeviceInstance& DeviceInstance::create(cl::Device& cl_device, int id)
@@ -221,9 +221,6 @@ void find_factors(int number, std::set<int>& factors)
 
 void type::ConvolutionKernel::initialize(DeviceInstance* I)
 {
-	Tensor::initialize(I);
-	if (I == nullptr)
-		return;
 	auto input = inputs[0], output = peers[0], weight = inputs[1];
 	int in_height = input->dimensions[1], in_width = input->dimensions[2], in_depth = input->dimensions[3];
 	int kernel_height = weight->dimensions[1], kernel_width = weight->dimensions[2];
@@ -236,25 +233,37 @@ void type::ConvolutionKernel::initialize(DeviceInstance* I)
 	find_factors(output->dimensions[2], factors[2]);
 
 	float max = 0;
-	auto local_size = reinterpret_cast<int*>(I->pointers[this]);
-	for (auto depth : factors[0])
-		for (auto height : factors[1])
-			for (auto width : factors[2]) {
-				int local_group_size = depth * height * width;
-				if (local_group_size > I->work_group_size)
-					continue;
-				int weight_local_size = sizeof(float) * kernel_height * kernel_width * in_depth * depth;
-				int input_local_size = sizeof(float) * (height * stride_size[0] + 2 * padding_height) * (width * stride_size[1] + 2 * padding_weight) * in_depth;
-				if (weight_local_size + input_local_size > I->local_memory_size) //CL_OUT_OF_RESOURCES
-					continue;
-				float score = local_group_size - ((depth - height) * (depth - height) + (height - width) * (height - width) + (width - depth) * (width - depth)) / 10.0f; //make them close as soon as possible
-				if (score > max) {
-					local_size[0] = depth;
-					local_size[1] = height;
-					local_size[2] = width;
- 					max = score;
+	int local[3] = { 0, 0, 0 };
+	if (I != nullptr)
+		for (auto depth : factors[0])
+			for (auto height : factors[1])
+				for (auto width : factors[2]) {
+					int local_group_size = depth * height * width;
+					if (local_group_size > I->work_group_size)
+						continue;
+					int weight_local_size = sizeof(float) * kernel_height * kernel_width * in_depth * depth;
+					int input_local_size = sizeof(float) * (height * stride_size[0] + 2 * padding_height) * (width * stride_size[1] + 2 * padding_weight) * in_depth;
+					if (weight_local_size + input_local_size > I->local_memory_size) //CL_OUT_OF_RESOURCES
+						continue;
+					float score = local_group_size - ((depth - height) * (depth - height) + (height - width) * (height - width) + (width - depth) * (width - depth)) / 10.0f; //make them close as soon as possible
+					if (score > max) {
+						local[0] = depth;
+						local[1] = height;
+						local[2] = width;
+						max = score;
+					}
 				}
-			}
+	bool useTiling = local[0] != 0 || local[1] != 0 || local[2] != 0;
+	if (useTiling)
+		shape_with({3}); //local_size[3]
+
+	Tensor::initialize(I);
+	if (useTiling) {
+		auto local_size = reinterpret_cast<int*>(I->pointers[this]);
+		local_size[0] = local[0];
+		local_size[1] = local[1];
+		local_size[2] = local[2];
+	}
 }
 
 void DeviceInstance::free()
@@ -524,17 +533,25 @@ void OpenCL_::run(Tensor& graph, vector<int> targetDeviceIDs, int debugger_devic
 	}
 }
 
+bool only_show_operator;
 void display_tensor_name(Tensor* current, void* padding)
 {
 	string& pad = *static_cast<string*>(padding);
-	logger << pad << type_name(current) << "\t\t" << current->alias;
-	if (!current->dimensions.empty()) {
-		logger << "[" << current->dimensions[0];
-		for (size_t i = 1; i < current->dimensions.size(); i++)
-			logger << "," << current->dimensions[i];
-		logger << "]";
+	bool display = !only_show_operator || (dynamic_cast<type::Weight*>(current) == nullptr && dynamic_cast<type::Bias*>(current) == nullptr
+			&& dynamic_cast<type::Output*>(current) == nullptr && dynamic_cast<back::Gradient*>(current) == nullptr);
+	if (display) {
+		logger << pad;
+		if (!pad.empty() && pad[0] == '-')
+			pad = pad.substr(1);
+		logger << type_name(current) << "\t\t" << current->alias;
+		if (!current->dimensions.empty()) {
+			logger << "[" << current->dimensions[0];
+			for (size_t i = 1; i < current->dimensions.size(); i++)
+				logger << "," << current->dimensions[i];
+			logger << "]";
+		}
+		logger << "\n";
 	}
-	logger << "\n";
 
 	auto structure = dynamic_cast<type::Structured*>(current);
 	if (structure == nullptr)
@@ -546,17 +563,17 @@ void display_tensor_name(Tensor* current, void* padding)
 		body->launch(&visited, static_cast<void*>(&indent), display_tensor_name);
 	auto others = structure->auxiliaries();
 	if (!others.empty())
-		logger << "-";
+		indent = "-" + indent;
 	for (auto aux : others)
 		display_tensor_name(aux, static_cast<void*>(&indent));
 }
 
-void OpenCL_::print_tensor_structure(Tensor& graph)
+void OpenCL_::print_tensor_structure(Tensor& graph, bool onlyShowOperator)
 {
 	string padding;
 	set<Tensor*> visited;
+	only_show_operator = onlyShowOperator;
 	graph.launch(&visited, static_cast<void*>(&padding), display_tensor_name);
-	logger << endl;
 }
 
 void OpenCL_::deallocate_all_tensors()
@@ -564,6 +581,32 @@ void OpenCL_::deallocate_all_tensors()
 	for (auto tensor : Tensor::ALL)
 		delete tensor;
 	Tensor::ALL.clear();
+}
+
+string formatWithComma(size_t num)
+{
+	string src = to_string(num), dest;
+	if (src.length() <= 3)
+		return src;
+	for (int i = 0, N = (src.length() - 1) / 3, begin = 0, end = src.length() - 3 * N; i < N; i++, begin = end, end += 3)
+		dest.append(src.substr(begin, end - begin)).append(",");
+	dest.append(src.substr(src.length() - 3, 3));
+	return dest;
+}
+
+void OpenCL_::print_tensor_memory()
+{
+	sort(Tensor::ALL.begin(), Tensor::ALL.end(), [](const Tensor* a, const Tensor* b) -> bool { return a->volume > b->volume; });
+	int64 total = 0;
+	for (auto tensor : Tensor::ALL)
+		total += tensor->volume;
+	logger << "All tensors totally require " << formatWithComma(total * sizeof(float)) << " bytes memory:" << endl;
+	for (auto tensor : Tensor::ALL) {
+		if (tensor->volume == 0)
+			continue;
+		describe_tensor(tensor);
+		logger << " \t" << formatWithComma(tensor->volume * sizeof(float)) << " bytes" << endl;
+	}
 }
 
 const char* clErrorCodeDescriptions[] = {

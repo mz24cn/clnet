@@ -20,6 +20,7 @@
 #define USER_GROUP_SIZE_NOT_BIG_ENOUGH -29
 #define MIN_ERROR_CODE -70
 #define MILLIS(time) (MICROS() / 1000 - time)
+#define ALIGN(total,size) ((total + size - 1) / size * size)
 
 namespace clnet {
 extern const char* clErrorCodeDescriptions[];
@@ -111,7 +112,8 @@ public:
 	void run(Tensor& graph, std::vector<int> targetDeviceIDs = {}, int debugger_device_id = -1, int master_device_id = -1);
 	void deallocate_all_tensors();
 	void print_device_info(std::ostream& out);
-	void print_tensor_structure(Tensor& graph);
+	void print_tensor_structure(Tensor& graph, bool onlyShowOperator = false);
+	void print_tensor_memory();
 };
 extern OpenCL_ OpenCL;
 
@@ -134,6 +136,8 @@ template <typename T> void operate_tensor_data(Tensor* tensor, DeviceInstance& I
 template <typename T> T optional(std::string name, T default_value);
 template <typename T> T optional(std::unordered_map<std::string, std::string>& map, std::string name, T default_value);
 template <typename T> bool read_file_content(const std::string file, std::basic_string<T>& content);
+void describe_tensor(Tensor* tensor, bool only_name = true);
+std::string formatWithComma(size_t num);
 
 #define replace_once(str, key, value) str.replace(str.find(key), sizeof(key) - 1, value)
 void replace_all(std::string& content, const std::string key, const std::string replace);

@@ -28,6 +28,7 @@ extern Tensor *_current, *_breakpoint;
 extern int64 microseconds, breakpoint_hit_times;
 extern unordered_map<Tensor*, size_t> kernels_cost;
 
+enum Which {Device = 0, Host = 1, Object = 2};
 int debugger_device_id;
 thread *debugger;
 condition_variable breakpoint;
@@ -292,7 +293,7 @@ template <typename T> void parse_dimensions(string subprints, vector<T>* low, ve
 	}
 }
 
-void describe_tensor(Tensor* tensor, bool only_name = true)
+void describe_tensor(Tensor* tensor, bool only_name)
 {
 	if (tensor == nullptr) {
 		logger << "NULL" << endl;
@@ -304,11 +305,11 @@ void describe_tensor(Tensor* tensor, bool only_name = true)
 			logger << tensor->dimensions[0];
 		for (size_t i = 1; i < tensor->dimensions.size(); i++)
 			logger << "," << tensor->dimensions[i];
-		logger << "]: " << type_name(tensor) << endl;
+		logger << "]: " << type_name(tensor);
 		return;
 	}
 
-	logger << "\tthis:\t\t\t" << tensor;
+	logger << "\n\tthis:\t\t\t" << tensor;
 	logger << "\n\ttype:\t\t\t" << type_name(tensor);
 	logger << "\n\talias:\t\t\t" << tensor->alias;
 	logger << "\n\tvolume:\t\t\t" << tensor->volume;
@@ -325,17 +326,18 @@ void describe_tensor(Tensor* tensor, bool only_name = true)
 	logger << "\n\tgradient:\t\t";
 	describe_tensor(tensor->gradient);
 
-	logger << "\tinputs:\n";
+	logger << "\n\tinputs:";
 	for (auto input : tensor->inputs) {
-		logger << "\t\t";
+		logger << "\n\t\t";
 		describe_tensor(input);
 	}
 
-	logger << "\tpeers:\n";
+	logger << "\n\tpeers:";
 	for (auto peer : tensor->peers) {
-		logger << "\t\t";
+		logger << "\n\t\t";
 		describe_tensor(peer);
 	}
+	logger << endl;
 }
 
 template <typename T> function<void(T&)> unitary_operation(string op, T value)
@@ -369,6 +371,7 @@ template <typename T> void operate_tensor_data(Tensor* tensor, DeviceInstance& I
 		logger << "] for ";
 	}
 	describe_tensor(tensor);
+	logger << endl;
 	int NZ = tensor->dimensions.size() < 3? 1 : tensor->dimensions[tensor->dimensions.size() - 3];
 	int NR = tensor->dimensions.size() < 2? 1 : tensor->dimensions[tensor->dimensions.size() - 2];
 	int NC = tensor->dimensions.back();
@@ -389,13 +392,13 @@ template <typename T> void operate_tensor_data(Tensor* tensor, DeviceInstance& I
 	op = op.substr(1);
 	T* data;
 	float* tmp = I.pointers[tensor];
-	if (which == 0) {
+	if (which == Device) {
 		data = new T[tensor->size / sizeof(T)];
 		I.pointers[tensor] = reinterpret_cast<float*>(data);
 		tensor->upload(I);
 	}
 	else
-		data = reinterpret_cast<T*>(which == 1? tmp : tensor->pointer);
+		data = reinterpret_cast<T*>(which == Host? tmp : tensor->pointer);
 
 	int64 range_dimension = 0, ranges[64], subprints[64];
 	if (reshaped.size() >= 64)
@@ -514,7 +517,7 @@ template <typename T> void operate_tensor_data(Tensor* tensor, DeviceInstance& I
 	else
 		throw runtime_error("too many ranges. try to reduce ':'.");
 	logger << endl;
-	if (which == 0) {
+	if (which == Device) {
 		if (!op.empty())
 			tensor->download(I);
 		I.pointers[tensor] = tmp;
@@ -687,10 +690,10 @@ void debugger_thread(DeviceInstance& I, Tensor& graph)
 			else if (command == "?" || command == "help") {
 				logger << "[debugger] commands references:\n";
 				logger << "goto(g)    continue(c)    pause(p)    describe(d)    setp(s)    exit    save    load    reload_kernel(rk)    profile(pf)    quit    help(?)\n";
-				logger << "{tensor_name}[...]:{data_type}             //display Tensor {tensor_name} in range [...] with {data_type}\n";
-				logger << "^{tensor_name}[...]:{data_type}            //display Tensor {tensor_name} host-side buffer in range [...] with {data_type} on debugger device\n";
+				logger << "{tensor_name}[...]/data_type               //display Tensor {tensor_name} in range [...] with {data_type}\n";
+				logger << "^{tensor_name}[...]/data_type              //display Tensor {tensor_name} host-side buffer in range [...] with {data_type} on debugger device\n";
 				logger << "{tensor_name}[...] += 0.001                //add each element in Tensor {tensor_name} range [...] with float value 0.001\n";
-				logger << "{tensor_name}[...0]:int [...1] = 2         //set each integral element in Tensor {tensor_name} range [...0] (reshaped with [...1]) with int value 2\n";
+				logger << "{tensor_name}[...0]/int [...1] = 2         //set each integral element in Tensor {tensor_name} range [...0] (reshaped with [...1]) with int value 2\n";
 				logger << "SGD.learning_rate *= 0.1                   //set Tensor SGD learning_rate to be 10% of original value\n";
 				logger << "describe(d) {tensor_name}                  //describe Tensor {tensor_name}\n";
 				logger << "goto(g)                                    //remove breakpoint\n";
@@ -714,11 +717,11 @@ void debugger_thread(DeviceInstance& I, Tensor& graph)
 				if (command.empty()) //When Ctrl+C hits.
 					break;
 				else if (command[0] == '^') {
-					which = command[1] == '^'? 2 : 1;
+					which = command[1] == '^'? Object : Host;
 					command = command.substr(which);
 				}
 				else
-					which  = 0;
+					which  = Device;
 
 				if (command[0] != '[') { //target for inputs or peers
 					auto pos = command.find(".");
@@ -795,7 +798,7 @@ void debugger_thread(DeviceInstance& I, Tensor& graph)
 								throw runtime_error(type_name(last) + " is not of back::Loss type.");
 							auto L = tensor->L(I);
 							describe_tensor(last);
-							logger << "Loss value: " << L << endl;
+							logger << "\nLoss value: " << L << endl;
 							continue;
 						}
 						auto pos2 = command.find("]", pos) + 1;
@@ -804,7 +807,7 @@ void debugger_thread(DeviceInstance& I, Tensor& graph)
 						if (command.size() > pos2 && command[pos2] == '[')
 							subprints = command.substr(pos2, command.size() - pos2);
 					}
-					else if ((pos = command.find("[")) != string::npos) {
+					else if ((pos = command.find("[")) != string::npos || (pos = command.find("/")) != string::npos) {
 						name = command.substr(0, pos);
 						last = locate_tensor(name);
 						subprints = command.substr(pos, command.size() - pos);
@@ -821,7 +824,7 @@ void debugger_thread(DeviceInstance& I, Tensor& graph)
 				}
 
 				string type("float");
-				size_t n = subprints.rfind(":");
+				size_t n = subprints.rfind("/");
 				if (n != string::npos && subprints.back() != ']') {
 					type = subprints.substr(n + 1);
 					subprints = subprints.substr(0, n);

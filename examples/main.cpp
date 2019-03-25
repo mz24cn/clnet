@@ -29,6 +29,7 @@ using namespace clnet;
 namespace clnet {
 extern unordered_map<string, string> key_values;
 extern Tensor* _breakpoint;
+extern int64 microseconds;
 }
 
 string locate_resources(string path)
@@ -67,12 +68,14 @@ int main(int argc, char** argv)
 
 	if (argc < 2) {
 		cout << "OpenCLNet [model] [/0,1,...] [/p] [/ld] [/ds] [/os] [/nf] [/nd] [/ss] [/all] [:{key} {value}]\n";
-		cout << "model\t\tcurrent support: MLP,MLP_softmax,charRNN,MNIST_CNN\n";
+		cout << "model\t\tcurrent support: MLP,MLP_softmax,charRNN,MNIST_CNN, CIFAR_WRN\n";
 		cout << "/ld\t\tlist devices\n";
 		cout << "/all\t\tuse all device types including CPU and ACCELERATOR (GPU only is default)\n";
 		cout << ":{key} {value}\tset named parameter with {key}, {value} pair\n";
 		cout << "/0,1,...\trun device ID (use ':master' and ':debugger' to set global update and debugger thread run device)\n";
 		cout << "/p\t\tpredict mode\n";
+		cout << "/pm\t\tprint memory\n";
+		cout << "/pf\t\tenable profile mode\n";
 		cout << "/ds\t\tdisplay structure\n";
 		cout << "/os\t\tdisplay opencl source\n";
 		cout << "/nf\t\tturn off fusion optimization\n";
@@ -84,7 +87,7 @@ int main(int argc, char** argv)
 	}
 
 	Tensor* graph = nullptr;
-	bool use_debugger = true, stop_on_startup = false, list_devices = false, display_structure = false, console_output = true, log_to_file = false;
+	bool use_debugger = true, stop_on_startup = false, list_devices = false, display_structure = false, only_operator = false, console_output = true, log_to_file = false, print_memory = false, profile_mode = false;
 	vector<int> devices;
 	for (int i = 1; i < argc; i++) {
 		string param(argv[i]);
@@ -102,6 +105,14 @@ int main(int argc, char** argv)
 			list_devices = true;
 		else if (param == "/ds")
 			display_structure = true;
+		else if (param == "/dso") {
+			display_structure = true;
+			only_operator = true;
+		}
+		else if (param == "/pm")
+			print_memory = true;
+		else if (param == "/pf")
+			profile_mode = true;
 		else if (param == "/nf")
 			CLNET_TENSOR_GLOBALS ^= CLNET_FEED_FORWARD_FUSION | CLNET_BACK_PROPAGATE_FUSION;
 		else if (param == "/os")
@@ -143,6 +154,7 @@ int main(int argc, char** argv)
 	extern T MLP_softmax();
 	extern T charRNN(bool is_predict);
 	extern T MNIST_CNN(bool is_predict);
+	extern T CIFAR_WRN(bool is_predict);
 	extern T kernel_test();
 
 	auto model = optional<string>("model", "MLP");
@@ -154,6 +166,8 @@ int main(int argc, char** argv)
 		graph = &charRNN(is_predict);
 	else if (model == "MNIST_CNN")
 		graph = &MNIST_CNN(is_predict);
+	else if (model == "CIFAR_WRN")
+		graph = &CIFAR_WRN(is_predict);
 	else if (model == "kernel_test")
 		graph = &kernel_test();
 	else if (model == "reference") { //run reference
@@ -170,10 +184,16 @@ int main(int argc, char** argv)
 
 	if (list_devices)
 		OpenCL.print_device_info(cout);
-	if (display_structure)
-		OpenCL.print_tensor_structure(*graph);
+	if (display_structure) {
+		OpenCL.print_tensor_structure(*graph, only_operator);
+		logger << endl;
+	}
+	if (print_memory)
+		OpenCL.print_tensor_memory();
 	if (stop_on_startup)
 		_breakpoint = graph;
+	if (profile_mode)
+		microseconds = 1;
 	OpenCL.run(*graph, devices, device_debugger, device_master);
 	return 0;
 }

@@ -296,14 +296,28 @@ Tensor& tanh(Tensor& z, std::string name)
 	return *result;
 }
 
+Tensor& Activation(Tensor& z, std::string type)
+{
+	if (type == "sigmoid")
+		return sigmoid(z);
+	else if (type == "softrelu")
+		return softrelu(z);
+	else if (type == "relu")
+		return relu(z);
+	else if (type == "tanh")
+		return tanh(z);
+	else
+		throw new runtime_error("unknown activation type: " + type);
+}
+
 Tensor& Tensor::operator * (Tensor& other)
 {
 	auto tensor = new type::BinaryOperator;
 	tensor->function = "multiply";
-	tensor->alias = tensor->function;
+	tensor->alias = alias + "*" + other.alias;
 	tensor->dependent_on(this);
 	tensor->dependent_on(&other);
-	auto result = new type::Output({dimensions[0], other.dimensions[0]}, {tensor}, alias + "*" + other.alias);
+	auto result = new type::Output({dimensions[0], other.dimensions[0]}, {tensor}, "(" + alias + "*" + other.alias + ")");
 	return *result;
 }
 
@@ -311,10 +325,10 @@ Tensor& Tensor::operator + (Tensor& other)
 {
 	auto tensor = new type::BinaryOperator;
 	tensor->function = "add";
-	tensor->alias = tensor->function;
+	tensor->alias = alias + "+" + other.alias;
 	tensor->dependent_on(this);
 	tensor->dependent_on(&other);
-	auto result = new type::Output(dimensions, {tensor}, alias + "+" + other.alias);
+	auto result = new type::Output(dimensions, {tensor}, "(" + alias + "+" + other.alias + ")");
 	return *result;
 }
 
@@ -682,7 +696,6 @@ Tensor& ConvolutionKernel(Tensor& input/*NHWC*/, Tensor& weight, Tensor* bias, v
 {
 	auto tensor = new type::ConvolutionKernel;
 	tensor->activation = activation_function;
-	tensor->shape_with({ 3 }); //local_size[3]
 	string formula;
 	if (!name.empty())
 		formula = name + "=" + formula;

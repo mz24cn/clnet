@@ -76,6 +76,7 @@ Tensor& sigmoid(Tensor& z, std::string name = "");
 Tensor& softrelu(Tensor& z, std::string name = "");
 Tensor& relu(Tensor& z, std::string name = "");
 Tensor& tanh(Tensor& z, std::string name = "");
+Tensor& Activation(Tensor& z, std::string type);
 
 Tensor& BatchNormalizedLayer(Tensor& input, float epsilon = 0.001f, float momentum = 0.9f, std::string name = "BN");
 Tensor& DropOut(Tensor& data, float probability_dropout, std::string name = "dropout");

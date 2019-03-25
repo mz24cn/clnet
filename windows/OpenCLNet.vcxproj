@@ -151,6 +151,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="..\examples\character_RNN.cpp" />
+    <ClCompile Include="..\examples\CIFAR_WRN.cpp" />
     <ClCompile Include="..\examples\image_io.cpp" />
     <ClCompile Include="..\examples\kernel_test.cpp" />
     <ClCompile Include="..\examples\main.cpp" />
