@@ -81,7 +81,7 @@ kernel void load_mnist_images(global float* data, global float* label, const glo
 			kernel.setArg(5, reinterpret_cast<int*>(I.pointers[tester])[0] * batch_size);
 		}
 		kernel.setArg(6, batch_size);
-		cl::NDRange global(peers[0]->dimensions[1] * peers[0]->dimensions[2]);
+		cl::NDRange global(peers[0]->volume / peers[0]->dimensions[0]);
 		I.queue.enqueueNDRangeKernel(kernel, cl::NullRange, global, cl::NullRange, &I.precondition_events, &I.events[peers[5]]);
 		I.events[peers[6]] = I.events[peers[5]];
 	}
@@ -108,14 +108,15 @@ T MNIST_CNN(bool is_predict)
 	const string mnist_folder = optional<string>("mnist_folder", "D:\\DataSets\\");
 	const int batch_size = optional<int>("batch_size", 32);
 	auto iterator = new MNISTImageIterator(mnist_folder, batch_size);
+
 	vector<int64> dims{batch_size, iterator->peers[0]->dimensions[1], iterator->peers[0]->dimensions[2], 1};
-	T data = *new Tensor(dims, {}, "train_images_data");
-	data.dependent_on(iterator);
+	auto tensor = new Tensor(dims, {}, "train_images_data");
+	tensor->dependent_on(iterator);
 
 	//when filters3 > 480, AMD R9 295X2 (Hawaii) device runs unstably, randomly cause program to hung
 	const int kernel_size = 5, stride = 1, filters1 = 20, filters2 = 50, filters3 = 480, class_num = 10;
 	const string activation = "tanh", pooling_type = "max";
-//	T plane = Reshape(data, {data.dimensions.front(), data.volume / data.dimensions.front()}, "plane");
+//	T plane = Reshape(*tensor, {tensor->dimensions.front(), tensor->volume / tensor->dimensions.front()}, "plane");
 //	T FC1 = FullyConnectedLayer(plane, 512, "", "FC1");
 //	T BN1 = BatchNormalizedLayer(FC1, 0.001, 0.9, "BN1");
 //	T ACT1 = tanh(BN1);
@@ -126,7 +127,7 @@ T MNIST_CNN(bool is_predict)
 //	T FC2 = FullyConnectedLayer(FC1, 512, activation, "FC2");
 //	T reshape = FC2;
 
-//	T conv1 = ConvolutionKernel(data, filters1, kernel_size, stride, "", true, "conv1");
+//	T conv1 = ConvolutionKernel(*tensor, filters1, kernel_size, stride, "", true, "conv1");
 //	T BN1 = BatchNormalizedLayer(conv1, 0.001, 0.9, "BN1");
 //	T ACT1 = tanh(BN1);
 //	T pool1 = Pooling(ACT1, {2}, {}, pooling_type, true, "pool1");
@@ -136,7 +137,7 @@ T MNIST_CNN(bool is_predict)
 //	T pool2 = Pooling(ACT2, {2}, {}, pooling_type, true, "pool2");
 //	T reshape = Reshape(pool2, {pool2.dimensions[0], pool2.volume / pool2.dimensions[0]});
 
-	T conv1 = ConvolutionKernel(data, filters1, kernel_size, stride, activation, true, "conv1");
+	T conv1 = ConvolutionKernel(*tensor, filters1, kernel_size, stride, activation, true, "conv1");
 	T pool1 = Pooling(conv1, {2}, {}, pooling_type, true, "pool1");
 	T conv2 = ConvolutionKernel(pool1, filters2, kernel_size, stride, activation, true, "conv2");
 	T pool2 = Pooling(conv2, {2}, {}, pooling_type, true, "pool2");
@@ -156,7 +157,7 @@ T MNIST_CNN(bool is_predict)
 	label.dependent_on(iterator);
 	T loss = SoftmaxLoss(inference, label);
 	T SGD = StochasticGradientDescentUpdater(loss, learning_rate, weight_decay);
-	T initializer = XavierNormalDistributionInitializer(SGD, 0, 2.34f);
+	T initializer = GeneralInitializer(SGD);
 
 	vector<Tensor*> parameters;
 	for (auto tensor : Tensor::ALL)
@@ -169,11 +170,9 @@ T MNIST_CNN(bool is_predict)
 		auto optimizer = static_cast<type::IterativeOptimizer*>(self->peers[0]);
 		auto epoch = optimizer->current_epoch(I);
 
-		float accuracy = static_cast<back::Loss*>(&loss)->L(I);
-		accuracy = exp(-accuracy / batch_size);
 		size_t duration = optimizer->milliseconds_since_last(I);
 		string speed = epoch == 0? to_string(duration) + "ms" : to_string(1000.0f * N_samples / duration) + "/s";
-		logger << "[" << I.ID << "," << epoch << "," << speed << "] train accuracy: " << accuracy;
+		logger << "[" << I.ID << "," << epoch << "," << speed << "] train loss: " << static_cast<back::Loss*>(&loss)->L(I);
 
 		ofstream ofs(clnetparams_file, ostream::binary);
 		for (size_t i = 0; i < parameters.size(); i++)

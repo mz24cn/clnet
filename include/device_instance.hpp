@@ -114,6 +114,7 @@ public:
 	void print_device_info(std::ostream& out);
 	void print_tensor_structure(Tensor& graph, bool onlyShowOperator = false);
 	void print_tensor_memory();
+	void print_parameters(Tensor& graph);
 };
 extern OpenCL_ OpenCL;
 

@@ -651,45 +651,31 @@ void type::Data::run(DeviceInstance& I)
 	download(I, &no_preconditions);
 }
 
-void type::XavierNormalDistributionInitializer::run_globally(DeviceInstance& I)
+void type::GeneralInitializer::run_globally(DeviceInstance& I)
 {
 	default_random_engine generator;
 	for (auto tensor : peers) {
 		if (dynamic_cast<Weight*>(tensor) != nullptr) {
-			if (dynamic_cast<type::BatchNormalizedLayer*>(tensor->peers[0]) != nullptr)
+			int64 fan_in = tensor->volume / tensor->dimensions.back(), fan_out = tensor->volume / tensor->dimensions.front();
+			if (tensor->dimensions.size() == 1) {
+				uniform_real_distribution<float> distribution(mu, sigma);
 				for (int64 i = 0; i < tensor->volume; i++)
-					tensor->pointer[i] = 1.0f;
-//			else if (dynamic_cast<type::ConvolutionKernel*>(tensor->peers[0]) != nullptr) {
-////				int64 fan_in = tensor->dimensions.front(), fan_out = tensor->volume / fan_in;
-////				normal_distribution<float> distribution(mu, sqrt(sigma / fan_in));
-////				for (int64 hidden = 0; hidden < fan_out; hidden++)
-////					for (int64 k = 0; k < fan_in; k++)
-////						tensor->pointer[k * fan_out + hidden] = (float) distribution(generator);
-//
-//				int64 fan_in = tensor->dimensions[1] * tensor->dimensions[2], channel = tensor->dimensions.back(); //TODO
-//				normal_distribution<float> distribution(mu, sqrt(sigma / fan_in));
-////				for (float *p = tensor->pointer, *end = p + tensor->volume; p < end; p++)
-////					*p = (float) distribution(generator);
-//				for (int64 c = 0; c < channel; c++)
-//					for (int64 k = 0; k < fan_in; k++)
-//						for (int64 filter = 0; filter < tensor->dimensions.front(); filter++)
-//							tensor->pointer[(filter * fan_in + k) * channel + c] = (float) distribution(generator);
-//			}
+					tensor->pointer[i] = (float) distribution(generator);
+			}
 			else {
-				int64 fan_out = tensor->dimensions.back(), fan_in = tensor->volume / fan_out;
-				normal_distribution<float> distribution(mu, sqrt(sigma / fan_in));
+				normal_distribution<float> distribution(mu, sigma * sqrt(2.0f / fan_in)); //Delving deep into rectifiers: Surpassing human-level performance on ImageNet classification. He, K. et al. (2015)
 				for (int64 hidden = 0; hidden < fan_out; hidden++)
-					for (int64 k = 0; k < fan_in; k++)
+					for (int64 k = 0, K = tensor->volume / fan_out; k < K; k++)
 						tensor->pointer[k * fan_out + hidden] = (float) distribution(generator);
 			}
 		}
 		else if (dynamic_cast<Bias*>(tensor) == nullptr)
 			for (float *p = tensor->pointer, *end = p + tensor->volume; p < end; p++)
-				*p = 0; //(float) distribution(generator); TODO
+				*p = 0;
 	}
 }
 
-void type::XavierNormalDistributionInitializer::run(DeviceInstance& I)
+void type::GeneralInitializer::run(DeviceInstance& I)
 {
 	initialization.lock();
 	if (!initialized) {

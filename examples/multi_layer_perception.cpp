@@ -48,7 +48,7 @@ T MLP()
 	T loss = LinearRegressionLoss(l1_output, Y);
 	T SGD = StochasticGradientDescentUpdater(loss, learning_rate, 0);
 
-	T initializer = XavierNormalDistributionInitializer(SGD, 0, 2.34f);
+	T initializer = GeneralInitializer(SGD);
 	auto monitor = new InstantTensor("MLPMonitor", {}, {&loss}, [display_batches](InstantTensor* self, DeviceInstance& I) {
 		auto optimizer = static_cast<type::IterativeOptimizer*>(self->peers[1]);
 		auto epoch = optimizer->current_epoch(I);

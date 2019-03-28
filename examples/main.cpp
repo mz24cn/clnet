@@ -75,6 +75,7 @@ int main(int argc, char** argv)
 		cout << "/0,1,...\trun device ID (use ':master' and ':debugger' to set global update and debugger thread run device)\n";
 		cout << "/p\t\tpredict mode\n";
 		cout << "/pm\t\tprint memory\n";
+		cout << "/pp\t\tprint parameters\n";
 		cout << "/pf\t\tenable profile mode\n";
 		cout << "/ds\t\tdisplay structure\n";
 		cout << "/os\t\tdisplay opencl source\n";
@@ -87,7 +88,8 @@ int main(int argc, char** argv)
 	}
 
 	Tensor* graph = nullptr;
-	bool use_debugger = true, stop_on_startup = false, list_devices = false, display_structure = false, only_operator = false, console_output = true, log_to_file = false, print_memory = false, profile_mode = false;
+	bool use_debugger = true, stop_on_startup = false, list_devices = false, display_structure = false, only_operator = false,
+			console_output = true, log_to_file = false, print_memory = false, print_parameters = false, profile_mode = false;
 	vector<int> devices;
 	for (int i = 1; i < argc; i++) {
 		string param(argv[i]);
@@ -111,6 +113,8 @@ int main(int argc, char** argv)
 		}
 		else if (param == "/pm")
 			print_memory = true;
+		else if (param == "/pp")
+			print_parameters = true;
 		else if (param == "/pf")
 			profile_mode = true;
 		else if (param == "/nf")
@@ -190,6 +194,8 @@ int main(int argc, char** argv)
 	}
 	if (print_memory)
 		OpenCL.print_tensor_memory();
+	if (print_parameters)
+		OpenCL.print_parameters(*graph);
 	if (stop_on_startup)
 		_breakpoint = graph;
 	if (profile_mode)

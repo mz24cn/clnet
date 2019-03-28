@@ -46,7 +46,7 @@ D:/DataSets/下需包含MNIST数据集文件train-images.idx3-ubyte，train-labe
 .\Release\OpenCLNet.exe MLP /ss /ds /0  
 ```
 <pre>
-clnet::type::XavierNormalDistributionInitializer                XavierNormalDistributionInitializer
+clnet::type::GeneralInitializer                GeneralInitializer
 -       clnet::type::Weight             l0_weight[2,4096]
         clnet::type::Bias               l0_bias[4096]
         clnet::type::Weight             l1_weight[4096,1]
@@ -276,7 +276,7 @@ rk
 .\Release\OpenCLNet.exe charRNN /ds /0 :corpus_file D:\DataSets\charRNN\obama.txt :index_file D:\DataSets\charRNN\obama.index
 ```  
 <pre>
-clnet::type::XavierNormalDistributionInitializer                XavierNormalDistributionInitializer
+clnet::type::GeneralInitializer                GeneralInitializer
 -       clnet::type::Weight             embedding_matrix[84,256]
         clnet::type::Weight             lstm_weight_h0[256,1024]
         clnet::type::Weight             lstm_weight_x0[256,1024]
@@ -422,7 +422,7 @@ clnet::type::IterativeOptimizer         IterativeOptimizer[4]
 
 使用0.0002的学习率，标准的SGD更新（无weight decay，无冲量），运行Lenet-5，可以在第一个epoch达到97%的测试集准确率。测试集准确率最高99.19%。  
 <pre>
-clnet::type::XavierNormalDistributionInitializer                XavierNormalDistributionInitializer
+clnet::type::GeneralInitializer                GeneralInitializer
 -       clnet::type::Weight             conv1_weight[20,5,5,1]
         clnet::type::Bias               conv1_bias[20]
         clnet::type::Weight             conv2_weight[50,5,5,20]

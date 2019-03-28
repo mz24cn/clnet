@@ -65,17 +65,16 @@ struct Tensor {
 Tensor& IterativeOptimizer(std::vector<Tensor*> ins, std::vector<Tensor*> outs, size_t epoch = INT_MAX);
 Tensor& StochasticGradientDescentUpdater(Tensor& graph, float eta, float decay = 0, std::string name = "SGD");
 Tensor& StochasticGradientDescentUpdater(std::vector<Tensor*> parameters, float eta, float decay = 0, std::string name = "SGD");
-Tensor& XavierNormalDistributionInitializer(Tensor& updater, float mu, float sigma);
-Tensor& XavierNormalDistributionInitializer(std::vector<Tensor*> parameters, float mu, float sigma);
+Tensor& GeneralInitializer(Tensor& updater, float mu = 0, float sigma = 1.0f);
+Tensor& GeneralInitializer(std::vector<Tensor*> parameters, float mu = 0, float sigma = 1.0f);
 Tensor& Weight(std::vector<int64> dims = {}, std::string name = "weight", Tensor* input = nullptr);
 Tensor& Bias(std::vector<int64> dims = {}, std::string name = "bias", Tensor* input = nullptr);
 Tensor& Data(std::vector<int64> dims = {}, Tensor* input = nullptr, std::string name = "data");
 Tensor* Gradient(Tensor* target, Tensor* input = nullptr);
 
 Tensor& sigmoid(Tensor& z, std::string name = "");
-Tensor& softrelu(Tensor& z, std::string name = "");
-Tensor& relu(Tensor& z, std::string name = "");
 Tensor& tanh(Tensor& z, std::string name = "");
+Tensor& ReLU(Tensor& z, std::string type = "", std::string name = ""); //ReLU family: relu, leakyrelu, softrelu
 Tensor& Activation(Tensor& z, std::string type);
 
 Tensor& BatchNormalizedLayer(Tensor& input, float epsilon = 0.001f, float momentum = 0.9f, std::string name = "BN");
@@ -165,7 +164,7 @@ struct StochasticGradientDescentUpdater : Updater {
 	virtual void run_globally(DeviceInstance& I, DeviceInstance& source) override;
 };
 
-struct XavierNormalDistributionInitializer : Tensor, type::Structured {
+struct GeneralInitializer : Tensor, type::Structured {
 	float mu, sigma;
 	bool initialized = false;
 	std::mutex initialization;

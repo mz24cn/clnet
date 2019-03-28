@@ -104,7 +104,7 @@ kernel void load_cifar_images(global float* data, global float* label, const glo
 			kernel.setArg(5, reinterpret_cast<int*>(I.pointers[tester])[0] * batch_size);
 		}
 		kernel.setArg(6, batch_size);
-		cl::NDRange global(peers[0]->dimensions[1] * peers[0]->dimensions[2] * 3);
+		cl::NDRange global(peers[0]->volume / peers[0]->dimensions[0]);
 		I.queue.enqueueNDRangeKernel(kernel, cl::NullRange, global, cl::NullRange, &I.precondition_events, &I.events[peers[5]]);
 		I.events[peers[6]] = I.events[peers[5]];
 	}
@@ -126,18 +126,17 @@ kernel void load_cifar_images(global float* data, global float* label, const glo
 	}
 };
 
-string activation = "tanh";
 T residualBlock(T& data, int k, int filters, int block, const string& name)
 {
 	const int kernel_size = 3, stride = block != 0 || block == -1? 1 : 2;
 
-	string suffix = name + "_b" + to_string(block);
-	T activation0 = Activation(BatchNormalizedLayer(data, 0.001, 0.9, suffix + "_bn0"), activation);
+	string suffix = name + "_b" + to_string(block == -1? 0 : block);
+	T activation0 = ReLU(BatchNormalizedLayer(data, 0.001, 0.9, suffix + "_bn0"));
 	T conv0 = ConvolutionKernel(activation0, filters * k, kernel_size, stride, "", true, suffix + "_conv0");
 //	T dropout = DropOut(conv0, 0.3, "dropout");
-	T activation1 = Activation(BatchNormalizedLayer(conv0/*dropout*/, 0.001, 0.9, suffix + "_bn1"), activation);
+	T activation1 = ReLU(BatchNormalizedLayer(conv0/*dropout*/, 0.001, 0.9, suffix + "_bn1"));
 	T conv1 = ConvolutionKernel(activation1, filters * k, kernel_size, 1, "", true, suffix + "_conv1");
-	T short_connection = block == 0 || block == -1? ConvolutionKernel(activation0, filters * k, 1, stride, "", true, suffix + "_convdim") : data;
+	T short_connection = block == 0? ConvolutionKernel(activation0, filters * k, 1, stride, "", true, suffix + "_convdim") : data;
 //	conv1 += short_connection;
 //	return conv1;
 	T addition = conv1 + short_connection;
@@ -154,7 +153,8 @@ T CIFAR_WRN(bool is_predict)
 	auto iterator = new CIFARImageIterator(cifar_folder, batch_size, class_num);
 //	iterator->save_as_24bits_bmp(420, 660, false, "E:\\Temporary\\temp\\");
 
-	vector<int64> dims{batch_size, iterator->peers[0]->dimensions[1], iterator->peers[0]->dimensions[2], 3};
+	vector<int64> dims = iterator->peers[0]->dimensions;
+	dims[0] = batch_size;
 	Tensor* tensor = new Tensor(dims, {}, "train_images_data");
 	tensor->dependent_on(iterator);
 
@@ -166,10 +166,37 @@ T CIFAR_WRN(bool is_predict)
 		tensor = &residualBlock(*tensor, width, 32, i, "g1"); //[32,16,16,320]
 	for (int i = 0; i < N; i++) //group conv3
 		tensor = &residualBlock(*tensor, width, 64, i, "g2"); //[32,8,8,640]
-	T activation2 = Activation(BatchNormalizedLayer(*tensor, 0.001, 0.9, "bn"), activation);
+	T activation2 = ReLU(BatchNormalizedLayer(*tensor, 0.001, 0.9, "bn"));
 	T pool = Pooling(activation2, {8}, {1}, "max", false, "pool");
 	T reshape = Reshape(pool, {pool.dimensions[0], pool.volume / pool.dimensions[0]});
 	T inference = FullyConnectedLayer(reshape, class_num, "", "inference");
+
+//	const int kernel_size = 5, stride = 1, filters1 = 20, filters2 = 50, filters3 = 480;
+//	const string activation = "tanh", pooling_type = "max";
+//	T conv1 = ConvolutionKernel(*tensor, filters1, kernel_size, stride, "", true, "conv1");
+//	T BN1 = BatchNormalizedLayer(conv1, 0.001, 0.9, "BN1");
+//	T ACT1 = tanh(BN1);
+//	T pool1 = Pooling(ACT1, {2}, {}, pooling_type, true, "pool1");
+//	T conv2 = ConvolutionKernel(pool1, filters2, kernel_size, stride, "", true, "conv2");
+//	T BN2 = BatchNormalizedLayer(conv2, 0.001, 0.9, "BN2");
+//	T ACT2 = tanh(BN2);
+//	T pool2 = Pooling(ACT2, {2}, {}, pooling_type, true, "pool2");
+//	T conv3 = ConvolutionKernel(pool2, filters3, 2, stride, activation, true, "conv3");
+//	T BN3 = BatchNormalizedLayer(conv2, 0.001, 0.9, "BN3");
+//	T ACT3 = tanh(BN3);
+//	T pool3 = Pooling(ACT3, {2}, {}, pooling_type, true, "pool3");
+//	T reshape = Reshape(pool3, {pool3.dimensions[0], pool3.volume / pool3.dimensions[0]});
+//	T feature = FullyConnectedLayer(reshape, filters3, activation, "feature");
+//	T inference = FullyConnectedLayer(feature, class_num, "", "inference");
+
+//	T conv1 = ConvolutionKernel(*tensor, filters1, kernel_size, stride, activation, true, "conv1");
+//	T pool1 = Pooling(conv1, {2}, {}, pooling_type, true, "pool1");
+//	T conv2 = ConvolutionKernel(pool1, filters2, kernel_size, stride, activation, true, "conv2");
+//	T pool2 = Pooling(conv2, {2}, {}, pooling_type, true, "pool2");
+//	T reshape = Reshape(pool2, {pool2.dimensions[0], pool2.volume / pool2.dimensions[0]});
+//	T feature = FullyConnectedLayer(reshape, filters3, activation, "feature");
+//	T inference = FullyConnectedLayer(feature, class_num, "", "inference");
+
 	if (is_predict)
 		return inference;
 
@@ -179,7 +206,7 @@ T CIFAR_WRN(bool is_predict)
 	label.dependent_on(iterator);
 	T loss = SoftmaxLoss(inference, label);
 	T SGD = StochasticGradientDescentUpdater(loss, learning_rate, weight_decay);
-	T initializer = XavierNormalDistributionInitializer(SGD, 0, 2.34f);
+	T initializer = GeneralInitializer(SGD);
 
 	vector<Tensor*> parameters;
 	for (auto tensor : Tensor::ALL)
@@ -192,11 +219,9 @@ T CIFAR_WRN(bool is_predict)
 		auto optimizer = static_cast<type::IterativeOptimizer*>(self->peers[0]);
 		auto epoch = optimizer->current_epoch(I);
 
-		float accuracy = static_cast<back::Loss*>(&loss)->L(I);
-		accuracy = exp(-accuracy / batch_size);
 		size_t duration = optimizer->milliseconds_since_last(I);
 		string speed = epoch == 0? to_string(duration) + "ms" : to_string(1000.0f * N_samples / duration) + "/s";
-		logger << "[" << I.ID << "," << epoch << "," << speed << "] train accuracy: " << accuracy;
+		logger << "[" << I.ID << "," << epoch << "," << speed << "] train loss: " << static_cast<back::Loss*>(&loss)->L(I);
 
 //		ofstream ofs(clnetparams_file, ostream::binary);
 //		for (size_t i = 0; i < parameters.size(); i++)

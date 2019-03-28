@@ -596,7 +596,7 @@ string formatWithComma(size_t num)
 
 void OpenCL_::print_tensor_memory()
 {
-	sort(Tensor::ALL.begin(), Tensor::ALL.end(), [](const Tensor* a, const Tensor* b) -> bool { return a->volume > b->volume; });
+	sort(Tensor::ALL.begin(), Tensor::ALL.end(), [](const Tensor* a, const Tensor* b) -> bool { return a->volume > b->volume || (a->volume == b->volume && a->alias < b->alias); });
 	int64 total = 0;
 	for (auto tensor : Tensor::ALL)
 		total += tensor->volume;
@@ -606,6 +606,26 @@ void OpenCL_::print_tensor_memory()
 			continue;
 		describe_tensor(tensor);
 		logger << " \t" << formatWithComma(tensor->volume * sizeof(float)) << " bytes" << endl;
+	}
+}
+
+void OpenCL_::print_parameters(Tensor& graph)
+{
+	vector<Tensor*> parameters;
+	for (auto param : Tensor::ALL)
+		if (dynamic_cast<type::Weight*>(param) != nullptr || dynamic_cast<type::Bias*>(param) != nullptr)
+			parameters.push_back(param);
+	sort(parameters.begin(), parameters.end(), [](const Tensor* a, const Tensor* b) -> bool { return a->volume > b->volume || (a->volume == b->volume && a->alias < b->alias); });
+	int64 total = 0, gradient = 0;
+	for (auto tensor : parameters) {
+		total += tensor->volume;
+		if (tensor->gradient != nullptr)
+			gradient += tensor->volume;
+	}
+	logger << "Total number of parameters: " << formatWithComma(total) << ", trainable: " << formatWithComma(gradient) << endl;
+	for (auto tensor : parameters) {
+		describe_tensor(tensor);
+		logger << " \t" << formatWithComma(tensor->volume) << (tensor->gradient != nullptr? "" : " \t-") << endl;
 	}
 }
 

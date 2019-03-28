@@ -147,27 +147,27 @@ Tensor& StochasticGradientDescentUpdater(Tensor& graph, float eta, float decay, 
 	return *tensor;
 }
 
-Tensor& XavierNormalDistributionInitializer(Tensor& updater, float mu, float sigma)
+Tensor& GeneralInitializer(Tensor& updater, float mu, float sigma)
 {
-	auto tensor = new type::XavierNormalDistributionInitializer;
-	tensor->alias = "XavierNormalDistributionInitializer";
+	auto tensor = new type::GeneralInitializer;
+	tensor->alias = "GeneralInitializer";
 	tensor->mu = mu;
 	tensor->sigma = sigma;
 	tensor->peers = updater.peers;
 	return *tensor;
 }
 
-Tensor& XavierNormalDistributionInitializer(vector<Tensor*> parameters, float mu, float sigma)
+Tensor& GeneralInitializer(vector<Tensor*> parameters, float mu, float sigma)
 {
-	auto tensor = new type::XavierNormalDistributionInitializer;
-	tensor->alias = "XavierNormalDistributionInitializer";
+	auto tensor = new type::GeneralInitializer;
+	tensor->alias = "GeneralInitializer";
 	tensor->mu = mu;
 	tensor->sigma = sigma;
 	tensor->peers = parameters;
 	return *tensor;
 }
 
-vector<Tensor*> type::XavierNormalDistributionInitializer::auxiliaries()
+vector<Tensor*> type::GeneralInitializer::auxiliaries()
 {
 	return peers;
 }
@@ -266,21 +266,11 @@ Tensor& sigmoid(Tensor& z, std::string name)
 	return *result;
 }
 
-Tensor& softrelu(Tensor& z, std::string name)
+Tensor& ReLU(Tensor& z, std::string type, std::string name)
 {
 	auto tensor = new type::Activation;
-	tensor->function = "softrelu";
-	tensor->alias = name + (name.empty()? "" : "=") + tensor->function + "(" + z.alias + ")";
-	tensor->dependent_on(&z);
-	auto result = new type::Output(z.dimensions, {tensor}, name.empty()? tensor->function + "(" + z.alias + ")" : name);
-	return *result;
-}
-
-Tensor& relu(Tensor& z, std::string name)
-{
-	auto tensor = new type::Activation;
-	tensor->function = "relu";
-	tensor->alias = name + (name.empty()? "" : "=") + tensor->function + "(" + z.alias + ")";
+	tensor->function = type + "relu";
+	tensor->alias = name + (name.empty()? "" : "=") + type + "ReLU(" + z.alias + ")";
 	tensor->dependent_on(&z);
 	auto result = new type::Output(z.dimensions, {tensor}, name.empty()? tensor->function + "(" + z.alias + ")" : name);
 	return *result;
@@ -300,10 +290,12 @@ Tensor& Activation(Tensor& z, std::string type)
 {
 	if (type == "sigmoid")
 		return sigmoid(z);
-	else if (type == "softrelu")
-		return softrelu(z);
 	else if (type == "relu")
-		return relu(z);
+		return ReLU(z);
+	else if (type == "leakyrelu")
+		return ReLU(z, "leaky");
+	else if (type == "softrelu")
+		return ReLU(z, "soft");
 	else if (type == "tanh")
 		return tanh(z);
 	else
@@ -435,8 +427,8 @@ Tensor& BatchNormalizedLayer(Tensor& input, float epsilon, float momentum, std::
 	auto result = new type::Output(input.dimensions, {tensor}, name.empty()? tensor->alias : name);
 	new type::Output(input.dimensions, {tensor}, prefix + "deviation"); //peers[1]
 	new type::Output({input.dimensions.back()}, {tensor}, prefix + "std_dev"); //peers[2]
-	new type::Output({input.dimensions.back()}, {tensor}, prefix + "moving_mean");
-	new type::Output({input.dimensions.back()}, {tensor}, prefix + "moving_variance");
+	Bias({input.dimensions.back()}, prefix + "moving_mean", tensor);
+	Weight({input.dimensions.back()}, prefix + "moving_variance", tensor);
 	return *result;
 }
 
@@ -495,7 +487,7 @@ Tensor& FullyConnectedLayer(Tensor& x, int num_hidden, std::string activation_fu
 {
 	int dim_in = x.dimensions.back();
 	Tensor& weight = Weight({dim_in, num_hidden}, name + "_weight");
-	Tensor& bias = Bias({dim_in}, name + "_bias");
+	Tensor& bias = Bias({num_hidden}, name + "_bias");
 	return FullyConnectedLayer(x, weight, &bias, activation_function, name);
 }
 

@@ -218,7 +218,7 @@ T charRNN(bool is_predict)
 	T loss = SoftmaxLoss(output, label);
 	T SGD = StochasticGradientDescentUpdater(loss, learning_rate, weight_decay);
 
-	T initializer = XavierNormalDistributionInitializer(SGD, 0, 2.34f);
+	T initializer = GeneralInitializer(SGD);
 	const int N_chars = batch_size * S, N_samples = trainer->sequences_size();
 	auto monitor = new InstantTensor("charRNN_monitor", {}, {}, [N_chars, N_samples, &loss](InstantTensor* self, DeviceInstance& I) {
 		auto optimizer = static_cast<type::IterativeOptimizer*>(self->peers[0]);
