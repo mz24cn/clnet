@@ -644,21 +644,23 @@ void debugger_thread(DeviceInstance& I, Tensor& graph)
 				cin >> name;
 				string tensor_names;
 				if (name == "csv") {
-					string prefix;
-					cin >> prefix;
+					string path;
+					cin >> path;
 					getline(cin, tensor_names);
 					stringstream ss;
 					ss << tensor_names;
 					vector<string> names;
-					while (ss) {
-						name.clear();
-						ss >> name;
-						if (!name.empty())
-							names.push_back(name);
+					while (ss >> name)
+						names.push_back(name);
+					if (name == "*") {
+						names.clear();
+						for (auto tensor : Tensor::ALL)
+							if (dynamic_cast<type::Weight*>(tensor) != nullptr || dynamic_cast<type::Bias*>(tensor) != nullptr)
+								names.push_back(tensor->alias);
 					}
 					tensor_names.clear();
-					for (auto file : names) {
-						file = prefix + file + ".csv";
+					for (auto& file : names) {
+						file = path + file + ".csv";
 						auto tensor = load_tensor_from_csv(file, nullptr, &I);
 						if (!tensor_names.empty())
 							tensor_names += ", ";

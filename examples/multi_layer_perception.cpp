@@ -48,7 +48,7 @@ T MLP()
 	T loss = LinearRegressionLoss(l1_output, Y);
 	T SGD = StochasticGradientDescentUpdater(loss, learning_rate, 0);
 
-	T initializer = GeneralInitializer(SGD);
+	T initializer = GeneralInitializer(SGD.peers);
 	auto monitor = new InstantTensor("MLPMonitor", {}, {&loss}, [display_batches](InstantTensor* self, DeviceInstance& I) {
 		auto optimizer = static_cast<type::IterativeOptimizer*>(self->peers[1]);
 		auto epoch = optimizer->current_epoch(I);
@@ -95,8 +95,8 @@ T MLP_softmax()
 		params[i + nLayers] = &Bias({layerSizes[i]}, string("b") + istr);
 		outputs[i] = &FullyConnectedLayer(i == 0? sym_x : *outputs[i-1], *params[i], params[i + nLayers], "leakyrelu", string("leaky_fc") + istr);
 	}
-	T loss = SoftmaxLoss(*outputs[nLayers - 1], sym_label);
-	T SGD = StochasticGradientDescentUpdater(loss, 0.0001, 0);
+	T loss = CrossEntropyLoss(*outputs[nLayers - 1], sym_label);
+	T SGD = StochasticGradientDescentUpdater(loss, optional<float>("learning_rate", 0.0128), 0);
 
 	auto initializer = new InstantTensor("simple_initializer", {}, params, [nLayers](InstantTensor* self, DeviceInstance& I) {
 		const vector<cl::Event> async;

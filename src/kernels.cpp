@@ -570,7 +570,7 @@ void type::IterativeOptimizer::run(DeviceInstance& I)
 
 string type::StochasticGradientDescentUpdater::generate_source_code(DeviceInstance& I)
 {
-	return kernels_source["update_parameters_by_stochastic_gradient_descent"];
+	return momentum != 0? kernels_source["update_parameters_by_stochastic_gradient_descent_with_momentum"] : kernels_source["update_parameters_by_stochastic_gradient_descent"];
 }
 
 void type::StochasticGradientDescentUpdater::run(DeviceInstance& I)
@@ -604,6 +604,12 @@ void type::StochasticGradientDescentUpdater::run(DeviceInstance& I)
 			kernel.setArg(1, I.buffers[parameter->gradient]);
 			kernel.setArg(2, learning_rate);
 			kernel.setArg(3, weight_decay);
+			if (momentum != 0) {
+				auto velocity = inputs[i + N];
+				auto& velocity_buffer = I.buffers[velocity];
+				kernel.setArg(4, momentum);
+				kernel.setArg(5, velocity_buffer);
+			}
 			cl::NDRange global(parameter->volume);
 			I.queue.enqueueNDRangeKernel(kernel, cl::NullRange, global, cl::NullRange, &I.precondition_events, &I.events[parameter]);
 		}
@@ -627,6 +633,12 @@ void type::StochasticGradientDescentUpdater::run_globally(DeviceInstance& I, Dev
 		kernel.setArg(1, gradient_buffer);
 		kernel.setArg(2, learning_rate);
 		kernel.setArg(3, weight_decay);
+		if (momentum != 0) {
+			auto velocity = inputs[i + N];
+			auto& velocity_buffer = I.buffers[velocity];
+			kernel.setArg(4, momentum);
+			kernel.setArg(5, velocity_buffer);
+		}
 		cl::NDRange global(parameter->volume);
 		I.queue.enqueueNDRangeKernel(kernel, cl::NullRange, global, cl::NullRange, &preconditions, &event);
 		updates.push_back(event);
@@ -656,22 +668,27 @@ void type::GeneralInitializer::run_globally(DeviceInstance& I)
 	default_random_engine generator;
 	for (auto tensor : peers) {
 		if (dynamic_cast<Weight*>(tensor) != nullptr) {
-			int64 fan_in = tensor->volume / tensor->dimensions.back(), fan_out = tensor->volume / tensor->dimensions.front();
 			if (tensor->dimensions.size() == 1) {
-				uniform_real_distribution<float> distribution(mu, sigma);
-				for (int64 i = 0; i < tensor->volume; i++)
-					tensor->pointer[i] = (float) distribution(generator);
+				if (tensor->gradient != nullptr) {
+					uniform_real_distribution<float> distribution(mu, sigma);
+					for (int64 i = 0; i < tensor->volume; i++)
+						tensor->pointer[i] = (float) distribution(generator);
+				}
+				else
+					for (int64 i = 0; i < tensor->volume; i++)
+						tensor->pointer[i] = 1.0f;
 			}
 			else {
+				int64 fan_in = tensor->volume / tensor->dimensions.back(), fan_out = tensor->volume / tensor->dimensions.front();
 				normal_distribution<float> distribution(mu, sigma * sqrt(2.0f / fan_in)); //Delving deep into rectifiers: Surpassing human-level performance on ImageNet classification. He, K. et al. (2015)
 				for (int64 hidden = 0; hidden < fan_out; hidden++)
 					for (int64 k = 0, K = tensor->volume / fan_out; k < K; k++)
 						tensor->pointer[k * fan_out + hidden] = (float) distribution(generator);
 			}
 		}
-		else if (dynamic_cast<Bias*>(tensor) == nullptr)
-			for (float *p = tensor->pointer, *end = p + tensor->volume; p < end; p++)
-				*p = 0;
+//		else if (dynamic_cast<Bias*>(tensor) != nullptr) //Tensors have been initialized to zero
+//			for (float *p = tensor->pointer, *end = p + tensor->volume; p < end; p++)
+//				*p = 0;
 	}
 }
 
@@ -1053,7 +1070,7 @@ float back::Loss::L(DeviceInstance& I) //for training progress evaluation scenar
 			float v = predict[i * num_classes + index];
 			sum += -log(v + 1e-38f);
 		}
-		return sum;
+		return sum / N;
 	}
 	else if (function == "linear_regression") {
 		inputs[0]->upload(I);
@@ -1070,7 +1087,7 @@ float back::Loss::L(DeviceInstance& I) //for training progress evaluation scenar
 	return 0;
 }
 
-string type::ConvolutionKernel::generate_source_code(DeviceInstance& I)
+string type::ConvolutionLayer::generate_source_code(DeviceInstance& I)
 {
 	cl::Platform platform(I.device.getInfo<CL_DEVICE_PLATFORM>());
 	if (platform.getInfo<CL_PLATFORM_NAME>().find("NVIDIA") == string::npos)
@@ -1083,7 +1100,7 @@ string type::ConvolutionKernel::generate_source_code(DeviceInstance& I)
 	return code;
 }
 
-void type::ConvolutionKernel::run(DeviceInstance& I)
+void type::ConvolutionLayer::run(DeviceInstance& I)
 {
 	auto& kernel = prepare_for_running_kernel(this, I);
 	auto input = inputs[0], output = peers[0], weight = inputs[1];
@@ -1122,20 +1139,20 @@ void type::ConvolutionKernel::run(DeviceInstance& I)
 		I.queue.enqueueNDRangeKernel(kernel, cl::NullRange, global, cl::NullRange, &I.precondition_events, &I.events[output]);
 }
 
-string back::ConvolutionKernel::generate_source_code(DeviceInstance& I)
+string back::ConvolutionLayer::generate_source_code(DeviceInstance& I)
 {
 	string code = kernels_source["back_propagate_convolution_relu_gradient_for_weight"] + "\n" + kernels_source["back_propagate_convolution_relu_gradient_for_input"];
-	auto& activation = static_cast<type::ConvolutionKernel*>(peers[0])->activation;
+	auto& activation = static_cast<type::ConvolutionLayer*>(peers[0])->activation;
 	if (activation != "relu")
 		replace_all(code, "relu", activation);
 
 	return code;
 }
 
-void back::ConvolutionKernel::run(DeviceInstance& I)
+void back::ConvolutionLayer::run(DeviceInstance& I)
 {
 	auto in_gradient = peers[1], weight_gradient = peers[2], bias_gradient = peers[3], input = peers[4], output = peers[5], out_gradient = inputs[0];
-	auto tensor = static_cast<type::ConvolutionKernel*>(peers[0]);
+	auto tensor = static_cast<type::ConvolutionLayer*>(peers[0]);
 	int padding_height = (out_gradient->dimensions[1] * tensor->stride_size[0] - input->dimensions[1] + weight_gradient->dimensions[1]) / 2;
 	int padding_weight = (out_gradient->dimensions[2] * tensor->stride_size[1] - input->dimensions[2] + weight_gradient->dimensions[2]) / 2;
 	int in_height = input->dimensions[1], in_width = input->dimensions[2], in_depth = input->dimensions[3];

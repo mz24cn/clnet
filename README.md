@@ -440,13 +440,13 @@ clnet::type::IterativeOptimizer         IterativeOptimizer[4]
         clnet::Tensor           train_images_data[32,28,28,1]
         clnet::type::Weight             conv1_weight[20,5,5,1]
         clnet::type::Bias               conv1_bias[20]
-        clnet::type::ConvolutionKernel          conv1=Convolution:5x5(train_images_data,tanh)
+        clnet::type::ConvolutionLayer          conv1=Convolution:5x5(train_images_data,tanh)
         clnet::type::Output             conv1[32,28,28,20]
         clnet::type::Pooling            pool1=Pooling(conv1,max)
         clnet::type::Output             pool1[32,14,14,20]
         clnet::type::Weight             conv2_weight[50,5,5,20]
         clnet::type::Bias               conv2_bias[50]
-        clnet::type::ConvolutionKernel          conv2=Convolution:5x5(pool1,tanh)
+        clnet::type::ConvolutionLayer          conv2=Convolution:5x5(pool1,tanh)
         clnet::type::Output             conv2[32,14,14,50]
         clnet::type::Pooling            pool2=Pooling(conv2,max)
         clnet::type::Output             pool2[32,7,7,50]
@@ -469,11 +469,11 @@ clnet::type::IterativeOptimizer         IterativeOptimizer[4]
         clnet::back::Gradient           gradient(pool2)[32,7,7,50]
         clnet::back::Pooling            back:pool2=Pooling(conv2,max)
         clnet::back::Gradient           gradient(conv2)[32,14,14,50]
-        clnet::back::ConvolutionKernel          back:conv2=Convolution:5x5(pool1,tanh)
+        clnet::back::ConvolutionLayer          back:conv2=Convolution:5x5(pool1,tanh)
         clnet::back::Gradient           gradient(pool1)[32,14,14,20]
         clnet::back::Pooling            back:pool1=Pooling(conv1,max)
         clnet::back::Gradient           gradient(conv1)[32,28,28,20]
-        clnet::back::ConvolutionKernel          back:conv1=Convolution:5x5(train_images_data,tanh)
+        clnet::back::ConvolutionLayer          back:conv1=Convolution:5x5(train_images_data,tanh)
         clnet::back::Gradient           gradient(conv1_weight)[20,5,5,1]
         clnet::back::Gradient           gradient(conv1_bias)[20]
         clnet::back::Gradient           gradient(conv2_weight)[50,5,5,20]
@@ -501,13 +501,13 @@ clnet::type::IterativeOptimizer         IterativeOptimizer[4]
                 clnet::Tensor           train_images_data[32,28,28,1]
                 clnet::type::Weight             conv1_weight[20,5,5,1]
                 clnet::type::Bias               conv1_bias[20]
-                clnet::type::ConvolutionKernel          conv1=Convolution:5x5(train_images_data,tanh)
+                clnet::type::ConvolutionLayer          conv1=Convolution:5x5(train_images_data,tanh)
                 clnet::type::Output             conv1[32,28,28,20]
                 clnet::type::Pooling            pool1=Pooling(conv1,max)
                 clnet::type::Output             pool1[32,14,14,20]
                 clnet::type::Weight             conv2_weight[50,5,5,20]
                 clnet::type::Bias               conv2_bias[50]
-                clnet::type::ConvolutionKernel          conv2=Convolution:5x5(pool1,tanh)
+                clnet::type::ConvolutionLayer          conv2=Convolution:5x5(pool1,tanh)
                 clnet::type::Output             conv2[32,14,14,50]
                 clnet::type::Pooling            pool2=Pooling(conv2,max)
                 clnet::type::Output             pool2[32,7,7,50]

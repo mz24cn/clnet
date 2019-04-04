@@ -167,9 +167,9 @@ void read_cifar10_images_and_labels(string file, int alignment_size, int offset,
 		for (int r = 0; r < 32; ++r) {
 			for (int c = 0; c < 32; ++c) {
 				int n = (32 * 32 * 3 + 1) * i + r * 32 + c;
-				*pI++ = (float) (unsigned char) buffer[n + 1];
-				*pI++ = (float) (unsigned char) buffer[n + 1 + 32 * 32];
-				*pI++ = (float) (unsigned char) buffer[n + 1 + 32 * 32 * 2];
+				*pI++ = ((unsigned char) buffer[n + 1]) / 255.0f; //normalize to [0, 1]
+				*pI++ = ((unsigned char) buffer[n + 1 + 32 * 32]) / 255.0f;
+				*pI++ = ((unsigned char) buffer[n + 1 + 32 * 32 * 2]) / 255.0f;
 			}
 		}
 	}
@@ -198,9 +198,9 @@ void read_cifar100_images_and_labels(string file, int alignment_size, bool use_f
 		for (int r = 0; r < 32; ++r) {
 			for (int c = 0; c < 32; ++c) {
 				int n = (32 * 32 * 3 + 2) * i + r * 32 + c;
-				*pI++ = (float) (unsigned char) buffer[n + 2];
-				*pI++ = (float) (unsigned char) buffer[n + 2 + 32 * 32];
-				*pI++ = (float) (unsigned char) buffer[n + 2 + 32 * 32 * 2];
+				*pI++ = ((unsigned char) buffer[n + 2]) / 255.0f;
+				*pI++ = ((unsigned char) buffer[n + 2 + 32 * 32]) / 255.0f;
+				*pI++ = ((unsigned char) buffer[n + 2 + 32 * 32 * 2]) / 255.0f;
 			}
 		}
 	}

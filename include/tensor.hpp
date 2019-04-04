@@ -63,9 +63,8 @@ struct Tensor {
 };
 
 Tensor& IterativeOptimizer(std::vector<Tensor*> ins, std::vector<Tensor*> outs, size_t epoch = INT_MAX);
-Tensor& StochasticGradientDescentUpdater(Tensor& graph, float eta, float decay = 0, std::string name = "SGD");
-Tensor& StochasticGradientDescentUpdater(std::vector<Tensor*> parameters, float eta, float decay = 0, std::string name = "SGD");
-Tensor& GeneralInitializer(Tensor& updater, float mu = 0, float sigma = 1.0f);
+Tensor& StochasticGradientDescentUpdater(Tensor& graph, float eta, float decay = 0, float momentum = 0, std::string name = "SGD");
+Tensor& StochasticGradientDescentUpdater(std::vector<Tensor*> parameters, float eta, float decay = 0, float momentum = 0, std::string name = "");
 Tensor& GeneralInitializer(std::vector<Tensor*> parameters, float mu = 0, float sigma = 1.0f);
 Tensor& Weight(std::vector<int64> dims = {}, std::string name = "weight", Tensor* input = nullptr);
 Tensor& Bias(std::vector<int64> dims = {}, std::string name = "bias", Tensor* input = nullptr);
@@ -77,11 +76,11 @@ Tensor& tanh(Tensor& z, std::string name = "");
 Tensor& ReLU(Tensor& z, std::string type = "", std::string name = ""); //ReLU family: relu, leakyrelu, softrelu
 Tensor& Activation(Tensor& z, std::string type);
 
-Tensor& BatchNormalizedLayer(Tensor& input, float epsilon = 0.001f, float momentum = 0.9f, std::string name = "BN");
+Tensor& BatchNormalizedLayer(Tensor& input, float epsilon = 0.00001f, float momentum = 0.1f, std::string name = "BN");
 Tensor& DropOut(Tensor& data, float probability_dropout, std::string name = "dropout");
 
 Tensor& LinearRegressionLoss(Tensor& y, Tensor& label);
-Tensor& SoftmaxLoss(Tensor& y, Tensor& label);
+Tensor& CrossEntropyLoss(Tensor& y, Tensor& label);
 
 Tensor& FullyConnectedLayer(Tensor& x, int num_hidden, std::string activation_function, std::string name = "FC");
 Tensor& FullyConnectedLayer(Tensor& x, Tensor& weight, Tensor* bias, std::string activation_function, std::string name = "");
@@ -89,8 +88,8 @@ Tensor& LSTMCell(Tensor& cell, Tensor& hidden, Tensor* gates_data, Tensor& weigh
 Tensor& LSTM(Tensor& input, int num_layer, int num_hidden, float dropout = 0, std::string name = "lstm");
 Tensor& Embedding(Tensor& input, Tensor& vector_weight, std::string name = "embedding");
 
-Tensor& ConvolutionKernel(Tensor& input/*NHWC*/, int filter_count, int kernel_size, int stride_size = 1, std::string activation_function = "relu", bool use_padding = false, std::string name = "convolution");
-Tensor& ConvolutionKernel(Tensor& input/*NHWC*/, Tensor& weight, Tensor* bias, std::vector<int> stride_sizes = {1, 1}, std::string activation_function = "relu", bool use_padding = false, std::string name = "");
+Tensor& ConvolutionLayer(Tensor& input/*NHWC*/, int filter_count, int kernel_size, int stride_size = 1, std::string activation_function = "relu", bool use_padding = false, bool use_bias = false, std::string name = "convolution");
+Tensor& ConvolutionLayer(Tensor& input/*NHWC*/, Tensor& weight, Tensor* bias, std::vector<int> stride_sizes = {1, 1}, std::string activation_function = "relu", bool use_padding = false, std::string name = "");
 Tensor& Pooling(Tensor& input, std::vector<int> pooling_sizes = {2, 2}, std::vector<int> stride_sizes = {}, std::string pooling_type = "max", bool use_padding = false, std::string name = "");
 
 Tensor& Reshape(Tensor& input, std::vector<int64> target_shape, std::string name = "reshape");
@@ -156,7 +155,7 @@ struct Updater : Tensor, type::Structured {
 };
 
 struct StochasticGradientDescentUpdater : Updater {
-	float learning_rate, weight_decay;
+	float learning_rate, weight_decay, momentum;
 
 //	StochasticGradientDescentUpdater(std::vector<Tensor*> grads, float eta, float decay);
 	virtual std::string generate_source_code(DeviceInstance& I) override;
@@ -266,7 +265,7 @@ struct Embedding : Tensor {
 	virtual void run(DeviceInstance& I) override;
 };
 
-struct ConvolutionKernel : Tensor {
+struct ConvolutionLayer : Tensor {
 	std::string activation;
 	int stride_size[2];
 
@@ -415,7 +414,7 @@ struct DropOut : Tensor {
 	virtual void run(DeviceInstance& I) override;
 };
 
-struct ConvolutionKernel : Tensor {
+struct ConvolutionLayer : Tensor {
 	virtual std::string generate_source_code(DeviceInstance& I) override;
 	virtual void run(DeviceInstance& I) override;
 };

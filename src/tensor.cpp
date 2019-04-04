@@ -87,15 +87,19 @@ vector<Tensor*> type::IterativeOptimizer::auxiliaries()
 	return aux;
 }
 
-Tensor& StochasticGradientDescentUpdater(vector<Tensor*> parameters, float eta, float decay, std::string name)
+Tensor& StochasticGradientDescentUpdater(vector<Tensor*> parameters, float eta, float decay, float momentum, std::string name)
 {
 	auto tensor = new type::StochasticGradientDescentUpdater;
 	tensor->alias = name;
 	tensor->learning_rate = eta;
 	tensor->weight_decay = decay;
+	tensor->momentum = momentum;
 	tensor->peers = parameters;
 	for (auto param : parameters)
 		tensor->dependent_on(param->gradient);
+	if (momentum != 0)
+		for (auto param : parameters)
+			tensor->dependent_on(new type::Output(param->dimensions, {}, name + "_velocity_" + param->alias));
 	return *tensor;
 }
 
@@ -120,41 +124,23 @@ void generate_all_gradients(Tensor* graph)
 	}
 }
 
-Tensor& StochasticGradientDescentUpdater(Tensor& graph, float eta, float decay, std::string name)
+Tensor& StochasticGradientDescentUpdater(Tensor& graph, float eta, float decay, float momentum, std::string name)
 {
-	auto tensor = new type::StochasticGradientDescentUpdater;
-	tensor->alias = name;
-	tensor->learning_rate = eta;
-	tensor->weight_decay = decay;
-
 	auto gradient = clnet::Gradient(&graph); //gradient output from loss
 	generate_all_gradients(gradient);
-	set<Tensor*> visited;
-	graph.launch(&visited, tensor, [](Tensor* param, void* data) {
-		if (dynamic_cast<type::Weight*>(param) != nullptr || dynamic_cast<type::Bias*>(param) != nullptr)
-			static_cast<Tensor*>(data)->dependent_on(param->gradient);
-	});
 
+	vector<Tensor*> params;
 	for (auto param : Tensor::ALL) {
 		if (dynamic_cast<type::Weight*>(param) == nullptr && dynamic_cast<type::Bias*>(param) == nullptr)
 			continue;
 		if (param->gradient == nullptr) {
-			cout << "warning: Gradient of " << param->alias << " not found." << endl;
+			if (CLNET_TENSOR_GLOBALS & CLNET_VALUE_MISMATCH_WARN)
+				cout << "warning: Gradient of " << param->alias << " not found." << endl;
 			continue;
 		}
-		tensor->peers.push_back(param);
+		params.push_back(param);
 	}
-	return *tensor;
-}
-
-Tensor& GeneralInitializer(Tensor& updater, float mu, float sigma)
-{
-	auto tensor = new type::GeneralInitializer;
-	tensor->alias = "GeneralInitializer";
-	tensor->mu = mu;
-	tensor->sigma = sigma;
-	tensor->peers = updater.peers;
-	return *tensor;
+	return StochasticGradientDescentUpdater(params, eta, decay, momentum, name);
 }
 
 Tensor& GeneralInitializer(vector<Tensor*> parameters, float mu, float sigma)
@@ -395,7 +381,7 @@ Tensor& LinearRegressionLoss(Tensor& y, Tensor& label)
 	return *tensor;
 }
 
-Tensor& SoftmaxLoss(Tensor& y, Tensor& label)
+Tensor& CrossEntropyLoss(Tensor& y, Tensor& label)
 {
 	auto tensor = new back::Loss;
 	tensor->function = "negative_log_likelihood";
@@ -676,17 +662,16 @@ Tensor* type::DropOut::generate_gradient(Tensor* out_gradient)
 	return back;
 }
 
-Tensor& ConvolutionKernel(Tensor& input/*NHWC*/, int filter_count, int kernel_size, int stride_size, string activation_function, bool use_padding, string name)
+Tensor& ConvolutionLayer(Tensor& input/*NHWC*/, int filter_count, int kernel_size, int stride_size, string activation_function, bool use_padding, bool use_bias, string name)
 {
 	Tensor& weight = Weight({filter_count, kernel_size, kernel_size, input.dimensions[3]}, name + "_weight");
-	Tensor& bias = Bias({filter_count}, name + "_bias");
 
-	return ConvolutionKernel(input, weight, &bias, {stride_size, stride_size}, activation_function, use_padding, name);
+	return ConvolutionLayer(input, weight, use_bias? &Bias({filter_count}, name + "_bias") : nullptr, {stride_size, stride_size}, activation_function, use_padding, name);
 }
 
-Tensor& ConvolutionKernel(Tensor& input/*NHWC*/, Tensor& weight, Tensor* bias, vector<int> stride_sizes, string activation_function, bool use_padding, string name)
+Tensor& ConvolutionLayer(Tensor& input/*NHWC*/, Tensor& weight, Tensor* bias, vector<int> stride_sizes, string activation_function, bool use_padding, string name)
 {
-	auto tensor = new type::ConvolutionKernel;
+	auto tensor = new type::ConvolutionLayer;
 	tensor->activation = activation_function;
 	string formula;
 	if (!name.empty())
@@ -716,9 +701,9 @@ Tensor& ConvolutionKernel(Tensor& input/*NHWC*/, Tensor& weight, Tensor* bias, v
 	return *result;
 }
 
-Tensor* type::ConvolutionKernel::generate_gradient(Tensor* out_gradient)
+Tensor* type::ConvolutionLayer::generate_gradient(Tensor* out_gradient)
 {
-	auto back = new back::ConvolutionKernel;
+	auto back = new back::ConvolutionLayer;
 	back->alias = "back:" + alias;
 	back->inputs.push_back(out_gradient);
 	back->peers.push_back(this); //peers[0]

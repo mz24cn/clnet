@@ -127,21 +127,21 @@ T MNIST_CNN(bool is_predict)
 //	T FC2 = FullyConnectedLayer(FC1, 512, activation, "FC2");
 //	T reshape = FC2;
 
-//	T conv1 = ConvolutionKernel(*tensor, filters1, kernel_size, stride, "", true, "conv1");
+//	T conv1 = ConvolutionLayer(*tensor, filters1, kernel_size, stride, "", true, false, "conv1");
 //	T BN1 = BatchNormalizedLayer(conv1, 0.001, 0.9, "BN1");
 //	T ACT1 = tanh(BN1);
 //	T pool1 = Pooling(ACT1, {2}, {}, pooling_type, true, "pool1");
-//	T conv2 = ConvolutionKernel(pool1, filters2, kernel_size, stride, "", true, "conv2");
+//	T conv2 = ConvolutionLayer(pool1, filters2, kernel_size, stride, "", true, false, "conv2");
 //	T BN2 = BatchNormalizedLayer(conv2, 0.001, 0.9, "BN2");
 //	T ACT2 = tanh(BN2);
 //	T pool2 = Pooling(ACT2, {2}, {}, pooling_type, true, "pool2");
 //	T reshape = Reshape(pool2, {pool2.dimensions[0], pool2.volume / pool2.dimensions[0]});
 
-	T conv1 = ConvolutionKernel(*tensor, filters1, kernel_size, stride, activation, true, "conv1");
+	T conv1 = ConvolutionLayer(*tensor, filters1, kernel_size, stride, activation, true, true, "conv1");
 	T pool1 = Pooling(conv1, {2}, {}, pooling_type, true, "pool1");
-	T conv2 = ConvolutionKernel(pool1, filters2, kernel_size, stride, activation, true, "conv2");
+	T conv2 = ConvolutionLayer(pool1, filters2, kernel_size, stride, activation, true, true, "conv2");
 	T pool2 = Pooling(conv2, {2}, {}, pooling_type, true, "pool2");
-//	T conv3 = ConvolutionKernel(pool2, filters3, 2, stride, activation, true, "conv3");
+//	T conv3 = ConvolutionLayer(pool2, filters3, 2, stride, activation, true, true, "conv3");
 //	T pool3 = Pooling(conv3, {2}, {}, pooling_type, true, "pool3");
 //	T reshape = Reshape(pool3, {pool3.dimensions[0], pool3.volume / pool3.dimensions[0]});
 	T reshape = Reshape(pool2, {pool2.dimensions[0], pool2.volume / pool2.dimensions[0]});
@@ -151,13 +151,13 @@ T MNIST_CNN(bool is_predict)
 	if (is_predict)
 		return inference;
 
-	const float learning_rate = optional<float>("learning_rate", 0.0002), weight_decay = optional<float>("weight_decay", 0);
+	const float learning_rate = optional<float>("learning_rate", 0.0064), weight_decay = optional<float>("weight_decay", 0);
 	const int max_epochs = optional<int>("max_epochs", 5000);
 	T label = *new Tensor({batch_size}, {}, "train_images_label");
 	label.dependent_on(iterator);
-	T loss = SoftmaxLoss(inference, label);
+	T loss = CrossEntropyLoss(inference, label);
 	T SGD = StochasticGradientDescentUpdater(loss, learning_rate, weight_decay);
-	T initializer = GeneralInitializer(SGD);
+	T initializer = GeneralInitializer(SGD.peers);
 
 	vector<Tensor*> parameters;
 	for (auto tensor : Tensor::ALL)

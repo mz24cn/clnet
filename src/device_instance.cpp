@@ -219,7 +219,7 @@ void find_factors(int number, std::set<int>& factors)
 	factors.insert(number);
 }
 
-void type::ConvolutionKernel::initialize(DeviceInstance* I)
+void type::ConvolutionLayer::initialize(DeviceInstance* I)
 {
 	auto input = inputs[0], output = peers[0], weight = inputs[1];
 	int in_height = input->dimensions[1], in_width = input->dimensions[2], in_depth = input->dimensions[3];
@@ -253,7 +253,7 @@ void type::ConvolutionKernel::initialize(DeviceInstance* I)
 						max = score;
 					}
 				}
-	bool useTiling = local[0] != 0 || local[1] != 0 || local[2] != 0;
+	bool useTiling = false;//local[0] != 0 || local[1] != 0 || local[2] != 0;
 	if (useTiling)
 		shape_with({3}); //local_size[3]
 

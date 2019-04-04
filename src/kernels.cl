@@ -253,7 +253,7 @@ kernel void negative_log_likelihood_loss(global float* out_grad, global float* o
 	for (int index = pos; index < dim_in; index += parallel) {
 		const int i = ((int) label[n]), k = n * dim_in + index;
 		out[k] /= sum;
-		out_grad[k] = negative_log_likelihood_gradient(out[k], index == i);
+		out_grad[k] = negative_log_likelihood_gradient(out[k], index == i) / batch_size;
 	}
 }
 
@@ -304,6 +304,18 @@ kernel void update_parameters_by_stochastic_gradient_descent(global float* param
 {
 	const int GID = get_global_id(0);
 	params[GID] -= learning_rate * (params_grad[GID] + weight_decay * params[GID]);
+	params_grad[GID] = 0;
+}
+
+//Parallel: params->dims
+kernel void update_parameters_by_stochastic_gradient_descent_with_momentum(global float* params, global float* params_grad,
+		float learning_rate, float weight_decay, float momentum, global float* velocity)
+{
+	const int GID = get_global_id(0);
+	const float gradient = params_grad[GID] + weight_decay * params[GID];
+	const float vt = momentum * velocity[GID] + gradient;
+	params[GID] -= learning_rate * vt;
+	velocity[GID] = vt;
 	params_grad[GID] = 0;
 }
 
@@ -992,9 +1004,10 @@ kernel void feed_forward_batch_normalization(global float* out, global float* de
 		if (n < stride)
 			mean_[n] += mean_[n + stride];
 	}
+	work_group_barrier(CLK_LOCAL_MEM_FENCE);
 	float mean = mean_[0] / batch_size;
 	moving_mean[k] = moving_mean[k] * momentum + mean * (1 - momentum);
-	
+
 	for (int i = n; i < batch_size; i += parallel) {
 		const float delta = in[i * dim_in + k] - mean;
 		deviation[i * dim_in + k] = delta;
@@ -1005,6 +1018,7 @@ kernel void feed_forward_batch_normalization(global float* out, global float* de
 		if (n < stride)
 			sigma2_[n] += sigma2_[n + stride];
 	}
+	work_group_barrier(CLK_LOCAL_MEM_FENCE);
 	float sigma2 = sigma2_[0] / batch_size;
 	moving_variance[k] = moving_variance[k] * momentum + sigma2 * (1 - momentum);
 	sigma2 = sqrt(sigma2 + epsilon);
@@ -1094,6 +1108,7 @@ kernel void back_propagate_batch_normalization(global float* in_grad, global flo
 			beta_gradient_[n] += beta_gradient_[n + stride];
 		}
 	}
+	work_group_barrier(CLK_LOCAL_MEM_FENCE);
 	float variance_grad = variance_grad_[0];
 	float mu_grad = mu_grad_[0], mu_tmp1 = mu_tmp1_[0], mu_tmp2 = mu_tmp2_[0];
 	float gamma_gradient = gamma_gradient_[0], beta_gradient = beta_gradient_[0];

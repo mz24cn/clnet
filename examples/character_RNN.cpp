@@ -213,12 +213,12 @@ T charRNN(bool is_predict)
 		return *predict_charRNN(output, lstm.peers[2], *indexer);
 
 	trainer->save_dictionary(index_file);
-	const float learning_rate = 0.0002, weight_decay = 0;
+	const float learning_rate = optional<float>("learning_rate", 0.064), weight_decay = 0;
 	T label = Data({batch_size, S}, trainer, "label");
-	T loss = SoftmaxLoss(output, label);
+	T loss = CrossEntropyLoss(output, label);
 	T SGD = StochasticGradientDescentUpdater(loss, learning_rate, weight_decay);
 
-	T initializer = GeneralInitializer(SGD);
+	T initializer = GeneralInitializer(SGD.peers);
 	const int N_chars = batch_size * S, N_samples = trainer->sequences_size();
 	auto monitor = new InstantTensor("charRNN_monitor", {}, {}, [N_chars, N_samples, &loss](InstantTensor* self, DeviceInstance& I) {
 		auto optimizer = static_cast<type::IterativeOptimizer*>(self->peers[0]);
