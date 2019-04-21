@@ -122,10 +122,12 @@ string generate_kernel_sources(DeviceInstance& I, const cl::Device& device, unor
 	return sources;
 }
 
-void Tensor::launch(set<Tensor*>* executed, void* data, void (*functor)(Tensor*, void*))
+void Tensor::launch(set<Tensor*>* executed, void* data, function<void(Tensor*, void*)> functor)
 {
+//	if (alias == "back:lstm_cell1")
+//		cout << std::endl;
 	if (executed->count(this) == 0) {
-		executed->insert(this);
+		executed->insert(this); //stop cycle access by inserting before inputs access
 		for (auto tensor : inputs)
 			if (tensor != nullptr)
 				tensor->launch(executed, data, functor);
@@ -190,6 +192,17 @@ cl::Kernel& prepare_for_running_kernel(Tensor* tensor, DeviceInstance& I, int nu
 		if (input != nullptr && input->volume > 0) //exclude "pure kernel" tensor
 			I.precondition_events.push_back(I.events[input]);
 	return I.kernels[tensor][number];
+}
+
+bool is_attached_for_tensor(Tensor* tensor, DeviceInstance& I)
+{
+	auto iter = I.events.find(tensor);
+	if (iter != I.events.end()) {
+		I.precondition_events.push_back(iter->second);
+		return true;
+	}
+	else
+		return false;
 }
 
 #define FULLY_CONNECTED_STD_DIM_IN_UPLIMIT 512
@@ -432,7 +445,7 @@ void back::FullyConnectedLayer::run(DeviceInstance& I)
 		kernel.setArg(7, dim_out);
 		kernel.setArg(8, dim_in);
 		kernel.setArg(9, N);
-		kernel.setArg(10, attached? 1 : 0); //merge_gradient mode
+		kernel.setArg(10, (int) is_attached_for_tensor(weight_gradient, I)); //merge_gradient mode
 
 		cl::Event& event = I.events[weight_gradient];
 		cl::NDRange global(global_size);
@@ -486,7 +499,7 @@ void back::FullyConnectedLayer::run(DeviceInstance& I)
 			kernel2.setArg(4, dim_out);
 			kernel2.setArg(5, dim_in);
 			kernel2.setArg(6, N);
-			kernel2.setArg(7, attached? 1 : 0); //merge_gradient mode
+			kernel2.setArg(7, (int) is_attached_for_tensor(in_gradient, I)); //merge_gradient mode
 			I.queue.enqueueNDRangeKernel(kernel2, cl::NullRange, cl::NDRange(N * dim_in), cl::NullRange, &I.precondition_events, &I.events[in_gradient]);
 		}
 	}
@@ -518,7 +531,7 @@ void back::BatchNormalizedLayer::run(DeviceInstance& I)
 	}
 	kernel.setArg(8, dim_in);
 	kernel.setArg(9, N);
-	kernel.setArg(10, attached? 1 : 0); //merge_gradient mode
+	kernel.setArg(10, (int) is_attached_for_tensor(peers[5], I)); //merge_gradient mode
 	int parallel = find_proper_local_size(N, I.work_group_size);
 	cl::NDRange global(dim_in * parallel);
 	cl::NDRange local(parallel);
@@ -547,25 +560,28 @@ void type::IterativeOptimizer::run(DeviceInstance& I)
 	size_t& epoch = current_epoch(I);
 	milliseconds_since_last(I);
 	MiniBatch* batcher = dynamic_cast<MiniBatch*>(peers[1]);
-	for (; epoch < max_epochs; epoch++) {
-		if (batcher == nullptr) {
+	if (batcher == nullptr)
+		for (; epoch < max_epochs; epoch++) {
 			visited.clear();
 			graph->launch(&visited, &I);
+
+			for (auto aux : others)
+				aux->launch(&visited, &I);
+			wait_for_all_kernels_finished(I);
 		}
-		else
+	else
+		for (; epoch < max_epochs; epoch++) {
 			while (batcher->has_next(I)) {
 				visited.clear();
 				graph->launch(&visited, &I);
 				wait_for_all_kernels_finished(I); //avoid piling up too many events. It's a must for AMD devices.
 			}
 
-		for (auto aux : others)
-			aux->launch(&visited, &I);
-		if (batcher != nullptr)
+			for (auto aux : others)
+				aux->launch(&visited, &I);
 			batcher->reset(I);
-
-		wait_for_all_kernels_finished(I);
-	}
+			wait_for_all_kernels_finished(I);
+		}
 }
 
 string type::StochasticGradientDescentUpdater::generate_source_code(DeviceInstance& I)
@@ -667,26 +683,26 @@ void type::GeneralInitializer::run_globally(DeviceInstance& I)
 {
 	default_random_engine generator;
 	for (auto tensor : peers) {
-		if (dynamic_cast<Weight*>(tensor) != nullptr) {
-			if (tensor->dimensions.size() == 1) {
-				if (tensor->gradient != nullptr) {
-					uniform_real_distribution<float> distribution(mu, sigma);
-					for (int64 i = 0; i < tensor->volume; i++)
-						tensor->pointer[i] = (float) distribution(generator);
-				}
-				else
-					for (int64 i = 0; i < tensor->volume; i++)
-						tensor->pointer[i] = 1.0f;
-			}
-			else {
-				int64 fan_in = tensor->volume / tensor->dimensions.back(), fan_out = tensor->volume / tensor->dimensions.front();
-				normal_distribution<float> distribution(mu, sigma * sqrt(2.0f / fan_in)); //Delving deep into rectifiers: Surpassing human-level performance on ImageNet classification. He, K. et al. (2015)
-				for (int64 hidden = 0; hidden < fan_out; hidden++)
-					for (int64 k = 0, K = tensor->volume / fan_out; k < K; k++)
-						tensor->pointer[k * fan_out + hidden] = (float) distribution(generator);
-			}
-		}
-//		else if (dynamic_cast<Bias*>(tensor) != nullptr) //Tensors have been initialized to zero
+		type::Parameter* param;
+		if ((param = dynamic_cast<type::Parameter*>(tensor)) == nullptr)
+			continue;
+
+//		if (dynamic_cast<type::Weight*>(param) != nullptr) {
+//			int64 fan_in = param->volume / param->dimensions.back(), fan_out = param->volume / param->dimensions.front();
+//			normal_distribution<float> distribution(mu, sigma * sqrt(2.0f / fan_in)); //Delving deep into rectifiers: Surpassing human-level performance on ImageNet classification. He, K. et al. (2015)
+//			for (int64 hidden = 0; hidden < fan_out; hidden++)
+//				for (int64 k = 0, K = param->volume / fan_out; k < K; k++)
+//					param->pointer[k * fan_out + hidden] = (float) distribution(generator);
+//		}
+//		else if (param->type_hint.find("unit") != string::npos)
+//			for (int64 i = 0; i < param->volume; i++)
+//				param->pointer[i] = 1.0f;
+//		else if (param->type_hint.find("uniform") != string::npos) {
+//			uniform_real_distribution<float> distribution(mu, sigma);
+//			for (int64 i = 0; i < param->volume; i++)
+//				param->pointer[i] = (float) distribution(generator);
+//		}
+//		else if (dynamic_cast<type::Bias*>(tensor) != nullptr) //Tensors have been initialized to zero
 //			for (float *p = tensor->pointer, *end = p + tensor->volume; p < end; p++)
 //				*p = 0;
 	}
@@ -1216,13 +1232,14 @@ void back::ConvolutionLayer::run(DeviceInstance& I)
 	kernel.setArg(12, padding_height);
 	kernel.setArg(13, padding_weight);
 	kernel.setArg(14, batch_size);
-//	kernel.setArg(15, outMem);
-//	kernel.setArg(16, outGradMem);
-//	kernel.setArg(17, weightMem);
-//	kernel.setArg(18, 100);
-//	kernel.setArg(19, 14);
+	kernel.setArg(15, (int) is_attached_for_tensor(in_gradient, I)); //merge gradient mode for input
+//	kernel.setArg(16, outMem);
+//	kernel.setArg(17, outGradMem);
+//	kernel.setArg(18, weightMem);
+//	kernel.setArg(19, 100);
 //	kernel.setArg(20, 14);
-//	kernel.setArg(21, local_depth);
+//	kernel.setArg(21, 14);
+//	kernel.setArg(22, local_depth);
 
 	cl::NDRange global(batch_size * in_depth, in_height, in_width);
 //	cl::NDRange local(in_depth > 1? 5 : in_depth, in_height, in_width); //TODO
@@ -1343,7 +1360,7 @@ void back::Activation::run(DeviceInstance& I)
 	kernel.setArg(0, I.buffers[in_gradient]);
 	kernel.setArg(1, I.buffers[out_grad]);
 	kernel.setArg(2, I.buffers[output]);
-	kernel.setArg(3, attached? 1 : 0);
+	kernel.setArg(3, (int) is_attached_for_tensor(in_gradient, I));
 
 	cl::NDRange global(output->volume);
 	I.queue.enqueueNDRangeKernel(kernel, cl::NullRange, global, cl::NullRange, &I.precondition_events, &I.events[in_gradient]);

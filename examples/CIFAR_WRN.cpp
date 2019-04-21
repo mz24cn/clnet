@@ -133,6 +133,8 @@ T residualBlock(T& data, int k, int filters, int block, const string& name)
 
 	string suffix = name + "_block" + to_string(block == -1? 0 : block);
 	T activation0 = ReLU(BatchNormalizedLayer(data, 0.00001f, 0.1f, suffix + "_bn0"));
+//	if (filters == 64)
+//		return short_connection;
 	T conv0 = ConvolutionLayer(activation0, filters * k, kernel_size, stride, "", true, false, suffix + "_conv0");
 //	T dropout = DropOut(conv0, 0.3, "dropout");
 	T activation1 = ReLU(BatchNormalizedLayer(conv0/*dropout*/, 0.00001f, 0.1f, suffix + "_bn1"));
@@ -168,7 +170,7 @@ T CIFAR_WRN(bool is_predict)
 	for (int i = 0; i < N; i++) //group conv3
 		tensor = &residualBlock(*tensor, width, 64, i, "group2"); //[32,8,8,640]
 	T activation2 = ReLU(BatchNormalizedLayer(*tensor, 0.00001f, 0.1f, "bn"));
-	T pool = Pooling(activation2, {8}, {1}, "max", false, "pool");
+	T pool = Pooling(activation2, {8}, {1}, "average", false, "pool");
 	T reshape = Reshape(pool, {pool.dimensions[0], pool.volume / pool.dimensions[0]});
 	T inference = FullyConnectedLayer(reshape, class_num, "", "inference");
 
@@ -209,7 +211,7 @@ T CIFAR_WRN(bool is_predict)
 	T SGD = StochasticGradientDescentUpdater(loss, learning_rate, weight_decay, momentum);
 	vector<Tensor*> parameters;
 	for (auto tensor : Tensor::ALL)
-		if (dynamic_cast<type::Bias*>(tensor) != nullptr || dynamic_cast<type::Weight*>(tensor) != nullptr)
+		if (dynamic_cast<type::Parameter*>(tensor) != nullptr)
 			parameters.push_back(tensor);
 	T initializer = GeneralInitializer(parameters);
 

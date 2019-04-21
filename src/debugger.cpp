@@ -374,7 +374,7 @@ template <typename T> void operate_tensor_data(Tensor* tensor, DeviceInstance& I
 	logger << endl;
 	int NZ = tensor->dimensions.size() < 3? 1 : tensor->dimensions[tensor->dimensions.size() - 3];
 	int NR = tensor->dimensions.size() < 2? 1 : tensor->dimensions[tensor->dimensions.size() - 2];
-	int NC = tensor->dimensions.back();
+	int NC = tensor->dimensions.size() < 1? 1 : tensor->dimensions.back();
 	if (tensor->volume > 0) {
 		if (tensor->size == 0) { //now find the 'real' tensor
 			auto p = I.pointers[tensor];
@@ -610,18 +610,27 @@ void debugger_thread(DeviceInstance& I, Tensor& graph)
 				reload_kernels(I.device, context, I);
 				logger << "[debugger] kernels reloaded." << endl;
 			}
-			else if (command == "save") {
-				cin >> name;
+			else if (command == "save" || command == "save_csv") {
+				string path, tensor_names;
+				cin >> path;
+				getline(cin, tensor_names);
 				vector<Tensor*> tensors;
-				for (auto tensor : Tensor::ALL)
-					if (dynamic_cast<type::Bias*>(tensor) != nullptr || dynamic_cast<type::Weight*>(tensor) != nullptr)
-						tensors.push_back(tensor);
+				if (tensor_names.find("*") != string::npos) {
+					for (auto tensor : Tensor::ALL)
+						if (dynamic_cast<type::Parameter*>(tensor) != nullptr)
+							tensors.push_back(tensor);
+				}
+				else {
+					stringstream ss;
+					ss << tensor_names;
+					while (ss >> name)
+						tensors.push_back(locate_tensor(name));
+				}
 
-				string tensor_names;
-				if (name == "csv") {
-					cin >> name;
+				tensor_names.clear();
+				if (command == "save_csv") {
 					for (size_t i = 0; i < tensors.size(); i++) {
-						string file = name + tensors[i]->alias + ".csv";
+						string file = path + tensors[i]->alias + ".csv";
 						save_tensor_as_csv(tensors[i], file, &I);
 						if (i > 0)
 							tensor_names += ", ";
@@ -629,7 +638,7 @@ void debugger_thread(DeviceInstance& I, Tensor& graph)
 					}
 				}
 				else {
-					ofstream ofs(name, ostream::binary);
+					ofstream ofs(path, ostream::binary);
 					for (size_t i = 0; i < tensors.size(); i++) {
 						save_tensor(tensors[i], ofs, &I);
 						if (i > 0)
@@ -638,27 +647,27 @@ void debugger_thread(DeviceInstance& I, Tensor& graph)
 					}
 					ofs.close();
 				}
-				logger << "[debugger] parameters " << tensor_names << " saved." << endl;
+				logger << "[debugger] tensors: " << tensor_names << " saved." << endl;
 			}
-			else if (command == "load") {
-				cin >> name;
-				string tensor_names;
-				if (name == "csv") {
-					string path;
-					cin >> path;
-					getline(cin, tensor_names);
+			else if (command == "load" || command == "load_csv") {
+				string path, tensor_names;
+				cin >> path;
+				getline(cin, tensor_names);
+				vector<string> names;
+				if (tensor_names.find("*") != string::npos) {
+					for (auto tensor : Tensor::ALL)
+						if (dynamic_cast<type::Parameter*>(tensor) != nullptr)
+							names.push_back(tensor->alias);
+				}
+				else {
 					stringstream ss;
 					ss << tensor_names;
-					vector<string> names;
 					while (ss >> name)
 						names.push_back(name);
-					if (name == "*") {
-						names.clear();
-						for (auto tensor : Tensor::ALL)
-							if (dynamic_cast<type::Weight*>(tensor) != nullptr || dynamic_cast<type::Bias*>(tensor) != nullptr)
-								names.push_back(tensor->alias);
-					}
-					tensor_names.clear();
+				}
+
+				tensor_names.clear();
+				if (command == "load_csv") {
 					for (auto& file : names) {
 						file = path + file + ".csv";
 						auto tensor = load_tensor_from_csv(file, nullptr, &I);
@@ -668,7 +677,7 @@ void debugger_thread(DeviceInstance& I, Tensor& graph)
 					}
 				}
 				else {
-					ifstream ifs(name, istream::binary);
+					ifstream ifs(path, istream::binary);
 					vector<Tensor*> tensors = load_tensors(ifs, &I);
 					ifs.close();
 					for (size_t i = 0; i < tensors.size(); i++) {
@@ -677,7 +686,7 @@ void debugger_thread(DeviceInstance& I, Tensor& graph)
 						tensor_names += tensors[i]->alias;
 					}
 				}
-				logger << "[debugger] parameters " << tensor_names << " loaded." << endl;
+				logger << "[debugger] tensors: " << tensor_names << " loaded." << endl;
 			}
 			else if (command == "quit") {
 				logger << "[debugger] debugger thread terminated." << endl;
@@ -705,10 +714,10 @@ void debugger_thread(DeviceInstance& I, Tensor& graph)
 				logger << "pf                                         //toggle performace profile to be enable or disable\n";
 				logger << "pf list                                    //display sorted profiling data\n";
 				logger << "pf clear                                   //clear profiling data\n";
-				logger << "save {file_path}                           //save parameters to file {file_path} with binary format\n";
-				logger << "save csv {file_path} {tensor1} {...2} ...  //save parameters to separated files in directory {file_path} with csv format\n";
-				logger << "load {file_path}                           //load parameters from file {file_path} with binary format\n";
-				logger << "load csv {file_path} {tensor1} {...2} ...  //load parameters from separated files in directory {file_path} with csv format\n";
+				logger << "save {file_path} *                         //save parameters to file {file_path} with binary format\n";
+				logger << "save_csv {file_path} {tensor1} {...2} ...  //save tensors to separated files in directory {file_path} with csv format\n";
+				logger << "load {file_path} *                         //load parameters from file {file_path} with binary format\n";
+				logger << "load_csv {file_path} {tensor1} {...2} ...  //load tensors from separated files in directory {file_path} with csv format\n";
 				logger << "exit                                       //terminate the program running\n";
 				logger << endl;
 			}
@@ -899,6 +908,9 @@ void debugger_thread(DeviceInstance& I, Tensor& graph)
 					logger << "updated." << endl;
 				}
 			}
+		}
+		catch (std::invalid_argument& e) {
+			logger << "[debugger] invalid_argument in " << e.what() << endl;
 		}
 		catch (runtime_error& e) {
 			logger << "[debugger] error: " << e.what() << endl;

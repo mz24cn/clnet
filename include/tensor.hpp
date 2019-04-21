@@ -45,7 +45,7 @@ struct Tensor {
 	virtual ~Tensor();
 
 	//generally launch() should NOT be overloaded. It is not declared as final just because of considering for flexibility.
-	virtual void launch(std::set<Tensor*>* executed, void* data, void (*functor)(Tensor*, void*) = [](Tensor* tensor, void* data) { tensor->run(*static_cast<DeviceInstance*>(data)); });
+	virtual void launch(std::set<Tensor*>* executed, void* data, std::function<void(Tensor*, void*)> functor = [](Tensor* tensor, void* data) { tensor->run(*static_cast<DeviceInstance*>(data)); });
 	virtual void initialize(DeviceInstance* I = nullptr);
 
 	Tensor& operator * (Tensor& other);
@@ -64,12 +64,12 @@ struct Tensor {
 
 Tensor& IterativeOptimizer(std::vector<Tensor*> ins, std::vector<Tensor*> outs, size_t epoch = INT_MAX);
 Tensor& StochasticGradientDescentUpdater(Tensor& graph, float eta, float decay = 0, float momentum = 0, std::string name = "SGD");
-Tensor& StochasticGradientDescentUpdater(std::vector<Tensor*> parameters, float eta, float decay = 0, float momentum = 0, std::string name = "");
 Tensor& GeneralInitializer(std::vector<Tensor*> parameters, float mu = 0, float sigma = 1.0f);
+Tensor& Parameter(std::vector<int64> dims = {}, std::string name = "", Tensor* input = nullptr, std::string type_hint = "auto");
 Tensor& Weight(std::vector<int64> dims = {}, std::string name = "weight", Tensor* input = nullptr);
 Tensor& Bias(std::vector<int64> dims = {}, std::string name = "bias", Tensor* input = nullptr);
 Tensor& Data(std::vector<int64> dims = {}, Tensor* input = nullptr, std::string name = "data");
-Tensor* Gradient(Tensor* target, Tensor* input = nullptr);
+Tensor* Gradient(Tensor* target, Tensor* back_operator = nullptr);
 
 Tensor& sigmoid(Tensor& z, std::string name = "");
 Tensor& tanh(Tensor& z, std::string name = "");
@@ -157,7 +157,7 @@ struct Updater : Tensor, type::Structured {
 struct StochasticGradientDescentUpdater : Updater {
 	float learning_rate, weight_decay, momentum;
 
-//	StochasticGradientDescentUpdater(std::vector<Tensor*> grads, float eta, float decay);
+	StochasticGradientDescentUpdater(std::vector<Tensor*> gradients, std::vector<Tensor*> all_parameters, float eta, float decay = 0, float momentum = 0, std::string name = "");
 	virtual std::string generate_source_code(DeviceInstance& I) override;
 	virtual void run(DeviceInstance& I) override;
 	virtual void run_globally(DeviceInstance& I, DeviceInstance& source) override;
@@ -173,12 +173,15 @@ struct GeneralInitializer : Tensor, type::Structured {
 	virtual std::vector<Tensor*> auxiliaries() override;
 };
 
-struct Weight : Tensor {
+struct Parameter : Tensor {
+	std::string type_hint;
 	virtual Tensor* generate_gradient(Tensor* generator = nullptr) override;
 };
 
-struct Bias : Tensor {
-	virtual Tensor* generate_gradient(Tensor* generator = nullptr) override;
+struct Weight : Parameter {
+};
+
+struct Bias : Parameter {
 };
 
 struct Data : Tensor {
@@ -353,8 +356,6 @@ public:
 // clnet::back **************************************************************************
 namespace back {
 struct Gradient : Tensor {
-	bool attached = false;
-	virtual Tensor* merge_gradient(Tensor* input);
 };
 
 struct Loss : Tensor {
@@ -366,7 +367,7 @@ struct Loss : Tensor {
 	virtual void run(DeviceInstance& I) override;
 };
 
-struct Activation : Gradient {
+struct Activation : Tensor {
 	std::string function;
 
 	virtual std::string generate_source_code(DeviceInstance& I) override;
@@ -397,14 +398,14 @@ struct LSTM : Tensor, type::Structured {
 	virtual std::vector<Tensor*> auxiliaries() override;
 };
 
-struct FullyConnectedLayer : Gradient {
+struct FullyConnectedLayer : Tensor {
 	std::string activation;
 
 	virtual std::string generate_source_code(DeviceInstance& I) override;
 	virtual void run(DeviceInstance& I) override;
 };
 
-struct BatchNormalizedLayer : Gradient {
+struct BatchNormalizedLayer : Tensor {
 	virtual std::string generate_source_code(DeviceInstance& I) override;
 	virtual void run(DeviceInstance& I) override;
 };

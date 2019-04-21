@@ -97,7 +97,7 @@ kernel void feed_forward_fully_connected_sigmoid(global float* out, const global
 //Parallel: max(weight_Out_dim, batch_size) x weight_In_dim
 kernel void back_propagate_fully_connected_softrelu_gradient(global float* in_grad, global float* weight_grad,
 		global float* bias_grad,	const global float* weight, const global float* in, const global float* out,
-		const global float* out_grad, const int dim_out, const int dim_in, const int batch_size, const int is_addon)
+		const global float* out_grad, const int dim_out, const int dim_in, const int batch_size, const int attached)
 {
 	const int GID = get_global_id(0);
 	const int k = GID % dim_in;
@@ -123,7 +123,7 @@ kernel void back_propagate_fully_connected_softrelu_gradient(global float* in_gr
 			const float out_grad_j = softrelu_gradient(out[n * dim_out + j]) * out_grad[n * dim_out + j];
 			sum_in_grad += weight_j * out_grad_j;
 		}
-		if (is_addon)
+		if (attached)
 			in_grad[n * dim_in + k] += sum_in_grad;
 		else
 			in_grad[n * dim_in + k] = sum_in_grad;
@@ -170,7 +170,7 @@ kernel void back_propagate_fully_connected_softrelu_gradient_for_weight(global f
 //Standard implementation
 //Parallel: batch_size x weight_In_dim
 kernel void back_propagate_fully_connected_softrelu_gradient_for_data(global float* in_grad, const global float* weight,
-		const global float* out, const global float* out_grad, const int dim_out, const int dim_in, const int batch_size, const int is_addon)
+		const global float* out, const global float* out_grad, const int dim_out, const int dim_in, const int batch_size, const int attached)
 {
 	const int GID = get_global_id(0);
 	const int k = GID % dim_in;
@@ -182,7 +182,7 @@ kernel void back_propagate_fully_connected_softrelu_gradient_for_data(global flo
 		const float out_grad_j = softrelu_gradient(out[n * dim_out + j]) * out_grad[n * dim_out + j];
 		sum_in_grad += weight_j * out_grad_j;
 	}
-	if (is_addon)
+	if (attached)
 		in_grad[n * dim_in + k] += sum_in_grad;
 	else
 		in_grad[n * dim_in + k] = sum_in_grad;
@@ -775,17 +775,19 @@ kernel void back_propagate_convolution_relu_gradient_for_weight(global float* we
 		}
 
 	weight_grad[GID] += sum_weight_grad;
-	if (kr == 0 && kc == 0 && kd == 0 && bias_grad != NULL)
+	if (bias_grad != NULL && kr == 0 && kc == 0 && kd == 0)
 		bias_grad[filter] += sum_bias_grad;
 }
 
-//Parallel: (batch_size * in_height * in_width * in_depth)
+//Parallel: ((batch_size * in_depth) * in_height * in_width)
 kernel void back_propagate_convolution_relu_gradient_for_input(global float* in_grad, const global float* weight, const global float* out,
 		const global float* out_grad, const int kernel_height, const int kernel_width, const int in_depth,
 		const int out_height, const int out_width, const int out_depth, const int stride_height, const int stride_width,
-		const int padding_height, const int padding_width, const int batch_size/*, local float* out_local, local float* out_grad_local, local float* weight_local,
+		const int padding_height, const int padding_width, const int batch_size, const int attached/*, local float* out_local, local float* out_grad_local, local float* weight_local,
 		const int local_weight_depth, const int local_height, const int local_width, const int local_depth*/)
 {
+//if (stride_height == 2 && kernel_width != 1)
+//	return;
 	const int in_height = get_global_size(1);
 	const int in_width = get_global_size(2);
 	const int n = get_global_id(0) / in_depth; //batch
@@ -794,24 +796,42 @@ kernel void back_propagate_convolution_relu_gradient_for_input(global float* in_
 	const int channel = get_global_id(0) % in_depth;
 
 	const int GID = ((n * in_height + rin) * in_width + cin) * in_depth + channel;
+//bool flag = n == 14 && rin == 14 && cin == 5 && channel == 25 && stride_height == 2;
+//bool flag = GID == 293762;
 	float sum_in_grad = 0;
 	const int kernel_volume = kernel_height * kernel_width * in_depth;
-	for (int kr = 0; kr < kernel_height; kr++)
-		for (int kc = 0; kc < kernel_width; kc++) {
-			int rout = (rin - kr + padding_height) / stride_height;
-			int cout = (cin - kc + padding_width) / stride_width;
-			if (rout < 0 || rout >= out_height || cout < 0 || cout >= out_width)
+	const float rout_min = max(0, (rin + padding_height - kernel_height + 1) / stride_height);
+	const float rout_max = min(out_height - 1, (rin + padding_height) / stride_height);
+	const float cout_min = max(0, (cin + padding_width - kernel_width + 1) / stride_width);
+	const float cout_max = min(out_width - 1, (cin + padding_width) / stride_width);
+	for (int rout = rout_min; rout <= rout_max; rout++) {
+		int kr = rin + padding_height - rout * stride_height;
+		if (kr < 0 || kr >= kernel_height)
+			continue;
+		for (int cout = cout_min; cout <= cout_max; cout++) {
+			int kc = cin + padding_width - cout * stride_width;
+			if (kc < 0 || kc >= kernel_width)
 				continue;
+//if (flag)
+//	printf("rout:%d cout:%d kr:%d kc:%d\n", rout, cout, kr, kc);
 			int out_index = ((n * out_height + rout) * out_width + cout) * out_depth;
 			int weight_index = (kr * kernel_width + kc) * in_depth + channel;
-			for (int filter = 0; filter < out_depth; filter++, weight_index += kernel_volume) {
+			for (int filter = 0; filter < out_depth; filter++, out_index++, weight_index += kernel_volume) {
 				float out_gradient = out_grad[out_index];
-				float func_grad = relu_gradient(out[out_index++]);
+				float func_grad = relu_gradient(out[out_index]);
 				float factor = weight[weight_index];
 				sum_in_grad += func_grad * out_gradient * factor;
+//				if (flag)
+//					printf("	out_gradient(%d,%d):%g weight(%d,%d):%g sum_in_grad:%g\n", ((n * out_height + rout) * out_width + cout + 1), filter + 1, out_gradient, ((filter * kernel_height + kr) * kernel_width + kc + 1), channel + 1, factor, sum_in_grad);
 			}
 		}
-	in_grad[GID] = sum_in_grad;
+	}
+	if (attached)
+		in_grad[GID] += sum_in_grad;
+	else
+		in_grad[GID] = sum_in_grad;
+//if (flag)
+//	printf("in_grad:%g\n", sum_in_grad);
 }
 
 //Parallel: (batch_size * out_height * out_width * out_depth)
@@ -882,62 +902,62 @@ kernel void back_propagate_max_pooling(global float* in_grad, const global float
 	in_grad[in_index] = gradient;
 }
 
-//Parallel: (out_height * out_width * out_depth)
+//Parallel: (batch_size * out_height * out_width * out_depth)
 kernel void feed_forward_average_pooling(global float* out, const global float* in/*batch_size * in_depth * in_height * in_width*/,
 		const int in_height, const int in_width, const int in_depth,
 		const int pool_height, const int pool_width, const int stride_height, const int stride_width,
 		const int padding_height, const int padding_width, const int batch_size)
 {
-	int out_height = (in_height + padding_height * 2 - pool_height + 1) / stride_height;
-	int out_width = (in_width + padding_width * 2 - pool_width + 1) / stride_width;
-	int GID = get_global_id(0);
-	int filter = GID / out_height / out_width;
-	int rout = GID / filter / out_width;
-	int cout = (GID / filter) % out_width;
+	const int out_height = get_global_size(1);
+	const int out_width = get_global_size(2);
+	const int out_depth = in_depth;
+	const int n = get_global_id(0) / out_depth; //batch
+	const int rout = get_global_id(1);
+	const int cout = get_global_id(2);
+	const int filter = get_global_id(0) % out_depth;
+	const int offset = ((n * out_height + rout) * out_width + cout) * out_depth + filter;
 
-	for (int n = 0; n < batch_size; n++)
-		for (int channel = 0; channel < in_depth; channel++) { //2d pooling  is not cross channel
-			float sum = 0;
-			for (int pr = 0; pr < pool_height; pr++)
-				for (int pc = 0; pc < pool_width; pc++) {
-					int rin = rout + pr - padding_height;
-					int cin = cout + pc - padding_width;
-					if (rin < 0 || rin >= in_height || cin < 0 || cin >= in_width)
-						continue;
-					int in_index = n * in_depth * in_width * in_height + channel * in_width * in_height + rin * stride_height * in_width + cin * stride_width;
-					sum += in[in_index];
-				}
-			out[n * get_global_size(0) + GID] = sum / pool_height / pool_width;
+	float sum = 0;
+	for (int pr = 0; pr < pool_height; pr++)
+		for (int pc = 0; pc < pool_width; pc++) {
+			int rin = rout * stride_height + pr - padding_height;
+			int cin = cout * stride_width + pc - padding_width;
+			if (rin < 0 || rin >= in_height || cin < 0 || cin >= in_width)
+				continue;
+			int in_index = ((n * in_height + rin) * in_width + cin) * in_depth + filter; //channel==filter
+			sum += in[in_index];
 		}
+	out[offset] = sum / pool_height / pool_width;
 }
 
 //Parallel: (batch_size * in_height * in_width * in_depth)
-kernel void back_propagate_average_pooling(global float* in_grad, const global float* out_grad, const global float* out,
-		const int in_height, const int in_width, const int in_depth,
+kernel void back_propagate_average_pooling(global float* in_grad, const global float* out_grad,
+		const int out_height, const int out_width, const int out_depth/*equals to in_depth*/,
 		const int pool_height, const int pool_width, const int stride_height, const int stride_width,
 		const int padding_height, const int padding_width, const int batch_size)
 {
-	int out_height = (in_height + padding_height * 2 - pool_height + 1) / stride_height;
-	int out_width = (in_width + padding_width * 2 - pool_width + 1) / stride_width;
-	int GID = get_global_id(0);
-	int filter = GID / out_height / out_width;
-	int rout = GID / filter / out_width;
-	int cout = (GID / filter) % out_width;
-	
-	for (int n = 0; n < batch_size; n++) {
-		float gradient = 0;
-		int in_index = n * in_depth * out_width * out_height + rout * in_width + in_height;
-		in_grad[in_index] = 0;
-		for (int pr = 0; pr < pool_height; pr += stride_height)
-			for (int pc = 0; pc < pool_width; pc += stride_width) {
-				int rin = rout - pr + padding_height;
-				int cin = cout - pc + padding_width;
-				if (rin < 0 || rin >= out_height || cin < 0 || cin >= out_width)
-					continue;
-				int out_index = n * in_depth * out_width * out_height + filter * out_width * out_height + rin * out_width + cin;
-				in_grad[in_index] += out_grad[out_index] / pool_height / pool_width;
-			}
-	}
+	const int in_height = get_global_size(1);
+	const int in_width = get_global_size(2);
+	const int in_depth = out_depth;
+	const int n = get_global_id(0) / in_depth; //batch
+	const int rin = get_global_id(1);
+	const int cin = get_global_id(2);
+	const int channel = get_global_id(0) % in_depth;
+	const int global_size = in_height * in_width * in_depth;
+	const int offset = (rin * in_width + cin) * in_depth + channel;
+
+	float gradient = 0;
+	int in_index = ((n * in_height + rin) * in_width + cin) * in_depth + channel;
+	for (int pr = 0; pr < pool_height; pr++)
+		for (int pc = 0; pc < pool_width; pc++) {
+			int rout = (rin - pr + padding_height) / stride_height;
+			int cout = (cin - pc + padding_width) / stride_width;
+			if (rout < 0 || rout >= out_height || cout < 0 || cout >= out_width)
+				continue;
+			int out_index = ((n * out_height + rout) * out_width + cout) * out_depth + channel; //filter==channel
+			gradient += out_grad[out_index];
+		}
+	in_grad[in_index] = gradient / pool_height / pool_width;
 }
 
 //kernel sum pooling: omitted. use average pooling instead.
@@ -1006,7 +1026,7 @@ kernel void feed_forward_batch_normalization(global float* out, global float* de
 	}
 	work_group_barrier(CLK_LOCAL_MEM_FENCE);
 	float mean = mean_[0] / batch_size;
-	moving_mean[k] = moving_mean[k] * momentum + mean * (1 - momentum);
+	moving_mean[k] = moving_mean[k] * (1.0f - momentum) + mean * momentum;
 
 	for (int i = n; i < batch_size; i += parallel) {
 		const float delta = in[i * dim_in + k] - mean;
@@ -1020,7 +1040,7 @@ kernel void feed_forward_batch_normalization(global float* out, global float* de
 	}
 	work_group_barrier(CLK_LOCAL_MEM_FENCE);
 	float sigma2 = sigma2_[0] / batch_size;
-	moving_variance[k] = moving_variance[k] * momentum + sigma2 * (1 - momentum);
+	moving_variance[k] = moving_variance[k] * (1.0f - momentum) + sigma2 * momentum;
 	sigma2 = sqrt(sigma2 + epsilon);
 	if (std_dev != NULL)
 		std_dev[k] = sigma2;
@@ -1040,7 +1060,7 @@ kernel void feed_forward_batch_normalization_small(global float* out, global flo
 	for (int i = 0; i < batch_size; i++)
 		mean += in[i * dim_in + k];
 	mean /= batch_size;
-	moving_mean[k] = moving_mean[k] * momentum + mean * (1 - momentum);
+	moving_mean[k] = moving_mean[k] * (1.0f - momentum) + mean * momentum;
 
 	float sigma2 = 0;
 	for (int i = 0; i < batch_size; i++) {
@@ -1049,7 +1069,7 @@ kernel void feed_forward_batch_normalization_small(global float* out, global flo
 		sigma2 += delta * delta;
 	}
 	sigma2 = sigma2 / batch_size;
-	moving_variance[k] = moving_variance[k] * momentum + sigma2 * (1 - momentum);
+	moving_variance[k] = moving_variance[k] * (1.0f - momentum) + sigma2 * momentum;
 	sigma2 = sqrt(sigma2 + epsilon);
 	if (std_dev != NULL)
 		std_dev[k] = sigma2;
@@ -1073,7 +1093,7 @@ kernel void feed_forward_batch_normalization_for_inference(global float* out, co
 //Parallel: (in_depth * local(min(batch_size * H * W, work_group_size))) //for convolutional case
 kernel void back_propagate_batch_normalization(global float* in_grad, global float* gamma_grad, global float* beta_grad,
 		const global float* gamma, const global float* deviation, const global float* std_dev, const global float* out_grad,
-		global float* deviation_grad, const int dim_in, const int batch_size, const int is_addon)
+		global float* deviation_grad, const int dim_in, const int batch_size, const int attached)
 {
 	const int GID = get_global_id(0);
 	const int parallel = get_local_size(0); //parallel addition, trade space for time
@@ -1115,7 +1135,7 @@ kernel void back_propagate_batch_normalization(global float* in_grad, global flo
 	
 	variance_grad *= - 0.5f / pow(std_dev[k], 3);
 	mu_grad = - mu_tmp1 / std_dev[k] - 2 * variance_grad / batch_size * mu_tmp2;
-	if (is_addon)
+	if (attached)
 		for (int i = n; i < batch_size; i += parallel)
 			in_grad[i * dim_in + k] += deviation_grad[i * dim_in + k] / std_dev[k] + 2 * variance_grad * deviation[i * dim_in + k] / batch_size + mu_grad / batch_size;
 	else
@@ -1129,7 +1149,7 @@ kernel void back_propagate_batch_normalization(global float* in_grad, global flo
 //Parallel: (dim_in * local(batch_size))
 kernel void back_propagate_batch_normalization_small(global float* in_grad, global float* gamma_grad, global float* beta_grad,
 		const global float* gamma, const global float* deviation, const global float* std_dev,
-		const global float* out_grad, local float* deviation_grad, const int dim_in, const int batch_size, const int is_addon)
+		const global float* out_grad, local float* deviation_grad, const int dim_in, const int batch_size, const int attached)
 {
 	const int GID = get_global_id(0);
 	const int k = GID / batch_size;
@@ -1150,7 +1170,7 @@ kernel void back_propagate_batch_normalization_small(global float* in_grad, glob
 	}
 	variance_grad *= - 0.5f / pow(std_dev[k], 3);
 	mu_grad = - mu_tmp1 / std_dev[k] - 2 * variance_grad / batch_size * mu_tmp2;
-	if (is_addon)
+	if (attached)
 		in_grad[n * dim_in + k] += deviation_grad[n] / std_dev[k] + 2 * variance_grad * deviation[n * dim_in + k] / batch_size + mu_grad / batch_size;
 	else
 		in_grad[n * dim_in + k] = deviation_grad[n] / std_dev[k] + 2 * variance_grad * deviation[n * dim_in + k] / batch_size + mu_grad / batch_size;
@@ -1167,10 +1187,10 @@ kernel void feed_forward_activation_sigmoid(global float* out, const global floa
 }
 
 //Parallel: (sizeof(data))
-kernel void back_propagate_activation_sigmoid(global float* in_grad, const global float* out_grad, const global float* out, const int is_addon)
+kernel void back_propagate_activation_sigmoid(global float* in_grad, const global float* out_grad, const global float* out, const int attached)
 {
 	const int GID = get_global_id(0);
-	if (is_addon)
+	if (attached)
 		in_grad[GID] += sigmoid_gradient(out[GID]) * out_grad[GID];
 	else
 		in_grad[GID] = sigmoid_gradient(out[GID]) * out_grad[GID];

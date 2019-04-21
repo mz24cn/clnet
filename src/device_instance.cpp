@@ -95,7 +95,7 @@ void DeviceInstance::initialize()
 #endif
 
 	for (auto tensor : Tensor::ALL)
-		if (ID >= 0 || dynamic_cast<type::Weight*>(tensor) != nullptr || dynamic_cast<type::Bias*>(tensor) != nullptr || dynamic_cast<back::Gradient*>(tensor) != nullptr)
+		if (ID >= 0 || dynamic_cast<type::Parameter*>(tensor) != nullptr || dynamic_cast<back::Gradient*>(tensor) != nullptr)
 			tensor->initialize(this);
 
 	reload_kernels(device, context, *this); //Considering resource limitation, generate source code after finishing initialization
@@ -253,7 +253,7 @@ void type::ConvolutionLayer::initialize(DeviceInstance* I)
 						max = score;
 					}
 				}
-	bool useTiling = false;//local[0] != 0 || local[1] != 0 || local[2] != 0;
+	bool useTiling = false;//TODO: local[0] != 0 || local[1] != 0 || local[2] != 0;
 	if (useTiling)
 		shape_with({3}); //local_size[3]
 
@@ -355,6 +355,7 @@ void wait_for_all_kernels_finished(DeviceInstance& I)
 {
 	for (auto& iter : I.events)
 		iter.second.wait();
+	I.events.clear(); //used by is_attached_for_tensor()
 }
 
 vector<cl::Device>& OpenCL_::find_devices()
@@ -537,8 +538,8 @@ bool only_show_operator;
 void display_tensor_name(Tensor* current, void* padding)
 {
 	string& pad = *static_cast<string*>(padding);
-	bool display = !only_show_operator || (dynamic_cast<type::Weight*>(current) == nullptr && dynamic_cast<type::Bias*>(current) == nullptr
-			&& dynamic_cast<type::Output*>(current) == nullptr && dynamic_cast<back::Gradient*>(current) == nullptr);
+	bool display = !only_show_operator ||
+			(dynamic_cast<type::Parameter*>(current) == nullptr && dynamic_cast<type::Output*>(current) == nullptr && dynamic_cast<back::Gradient*>(current) == nullptr);
 	if (display) {
 		logger << pad;
 		if (!pad.empty() && pad[0] == '-')
@@ -550,7 +551,7 @@ void display_tensor_name(Tensor* current, void* padding)
 				logger << "," << current->dimensions[i];
 			logger << "]";
 		}
-		logger << "\n";
+		logger << std::endl;
 	}
 
 	auto structure = dynamic_cast<type::Structured*>(current);
@@ -613,7 +614,7 @@ void OpenCL_::print_parameters(Tensor& graph)
 {
 	vector<Tensor*> parameters;
 	for (auto param : Tensor::ALL)
-		if (dynamic_cast<type::Weight*>(param) != nullptr || dynamic_cast<type::Bias*>(param) != nullptr)
+		if (dynamic_cast<type::Parameter*>(param) != nullptr)
 			parameters.push_back(param);
 	sort(parameters.begin(), parameters.end(), [](const Tensor* a, const Tensor* b) -> bool { return a->volume > b->volume || (a->volume == b->volume && a->alias < b->alias); });
 	int64 total = 0, gradient = 0;

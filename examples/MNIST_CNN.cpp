@@ -161,7 +161,7 @@ T MNIST_CNN(bool is_predict)
 
 	vector<Tensor*> parameters;
 	for (auto tensor : Tensor::ALL)
-		if (dynamic_cast<type::Bias*>(tensor) != nullptr || dynamic_cast<type::Weight*>(tensor) != nullptr)
+		if (dynamic_cast<type::Parameter*>(tensor) != nullptr)
 			parameters.push_back(tensor);
 	auto clnetparams_file = optional<string>("params_file", "D:\\DataSets\\MNIST_CNN.clnetparams");
 

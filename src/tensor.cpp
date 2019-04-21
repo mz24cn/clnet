@@ -41,17 +41,7 @@ Tensor::~Tensor()
 		delete pointer;
 }
 
-Tensor* type::Weight::generate_gradient(Tensor* generator)
-{
-	auto back = new back::Gradient;
-	back->shape_with(dimensions);
-	back->alias = "gradient(" + alias + ")";
-	if (generator != nullptr)
-		back->inputs.push_back(generator);
-	return back;
-}
-
-Tensor* type::Bias::generate_gradient(Tensor* generator)
+Tensor* type::Parameter::generate_gradient(Tensor* generator)
 {
 	auto back = new back::Gradient;
 	back->shape_with(dimensions);
@@ -87,20 +77,15 @@ vector<Tensor*> type::IterativeOptimizer::auxiliaries()
 	return aux;
 }
 
-Tensor& StochasticGradientDescentUpdater(vector<Tensor*> parameters, float eta, float decay, float momentum, std::string name)
+type::StochasticGradientDescentUpdater::StochasticGradientDescentUpdater(vector<Tensor*> gradients, vector<Tensor*> all_parameters, float eta, float decay, float momentum, std::string name)
+		: learning_rate(eta), weight_decay(decay), momentum(momentum)
 {
-	auto tensor = new type::StochasticGradientDescentUpdater;
-	tensor->alias = name;
-	tensor->learning_rate = eta;
-	tensor->weight_decay = decay;
-	tensor->momentum = momentum;
-	tensor->peers = parameters;
-	for (auto param : parameters)
-		tensor->dependent_on(param->gradient);
+	alias = name;
+	inputs = gradients;
+	peers = all_parameters;
 	if (momentum != 0)
-		for (auto param : parameters)
-			tensor->dependent_on(new type::Output(param->dimensions, {}, name + "_velocity_" + param->alias));
-	return *tensor;
+		for (auto param : all_parameters)
+			dependent_on(new type::Output(param->dimensions, {}, name + "_velocity_" + param->alias));
 }
 
 void generate_all_gradients(Tensor* graph)
@@ -129,18 +114,25 @@ Tensor& StochasticGradientDescentUpdater(Tensor& graph, float eta, float decay, 
 	auto gradient = clnet::Gradient(&graph); //gradient output from loss
 	generate_all_gradients(gradient);
 
-	vector<Tensor*> params;
+	vector<Tensor*> gradients, all_parameters;
 	for (auto param : Tensor::ALL) {
-		if (dynamic_cast<type::Weight*>(param) == nullptr && dynamic_cast<type::Bias*>(param) == nullptr)
+		if (dynamic_cast<type::Parameter*>(param) == nullptr)
 			continue;
 		if (param->gradient == nullptr) {
 			if (CLNET_TENSOR_GLOBALS & CLNET_VALUE_MISMATCH_WARN)
 				cout << "warning: Gradient of " << param->alias << " not found." << endl;
 			continue;
 		}
-		params.push_back(param);
+		all_parameters.push_back(param);
 	}
-	return StochasticGradientDescentUpdater(params, eta, decay, momentum, name);
+
+	set<Tensor*> visited;
+	graph.launch(&visited, &gradients, [](Tensor* param, void* data) { //may part of gradients w.r.t all_parameters
+		if (dynamic_cast<type::Parameter*>(param) != nullptr)
+			static_cast<vector<Tensor*>*>(data)->push_back(param->gradient);
+	});
+
+	return *new type::StochasticGradientDescentUpdater(gradients, all_parameters, eta, decay, momentum, name);
 }
 
 Tensor& GeneralInitializer(vector<Tensor*> parameters, float mu, float sigma)
@@ -173,24 +165,31 @@ void Tensor::shape_with(vector<int64> sizes)
 		volume *= dim;
 }
 
-Tensor& Weight(vector<int64> dims, string name, Tensor* input)
+Tensor& Parameter(vector<int64> dims, string name, Tensor* input, std::string type_hint)
 {
-	auto tensor = new type::Weight;
+	type::Parameter* tensor;
+	if (type_hint.find("weight") != string::npos)
+		tensor = new type::Weight;
+	else if (type_hint.find("bias") != string::npos)
+			tensor = new type::Bias;
+	else
+			tensor = new type::Parameter;
 	tensor->shape_with(dims);
 	tensor->alias = name;
+	tensor->type_hint = type_hint;
 	if (input != nullptr)
 		tensor->dependent_on(input);
 	return *tensor;
 }
 
+Tensor& Weight(vector<int64> dims, string name, Tensor* input)
+{
+	return Parameter(dims, name, input, "weight");
+}
+
 Tensor& Bias(vector<int64> dims, string name, Tensor* input)
 {
-	auto tensor = new type::Bias;
-	tensor->shape_with(dims);
-	tensor->alias = name;
-	if (input != nullptr)
-		tensor->dependent_on(input);
-	return *tensor;
+	return Parameter(dims, name, input, "bias");
 }
 
 type::Output::Output(vector<int64> dims, vector<Tensor*> ins, string name)
@@ -201,34 +200,36 @@ type::Output::Output(vector<int64> dims, vector<Tensor*> ins, string name)
 		dependent_on(in);
 }
 
-Tensor* back::Gradient::merge_gradient(Tensor* input)
-{
-		if (gradient != input && gradient != nullptr && input != nullptr) {
-			auto merger = dynamic_cast<back::Gradient*>(gradient);
-			if (merger != nullptr)
-				merger->attached = true;
-//			logger << "    G: " << type_name(this) << "/" << alias;
-//			if (input != nullptr)
-//				logger << "    In: " << type_name(input) << "/" << input->alias;
-//			logger << "    GG: " << type_name(gradient) << "/" << gradient->alias;
-//			logger << endl;
-		}
-		return this;
-}
-
-Tensor* Gradient(Tensor* target, Tensor* input)
+Tensor* Gradient(Tensor* target, Tensor* back_operator)
 {
 	if (target == nullptr)
 		return nullptr;
-	if (target->gradient != nullptr) {
-		auto gradient = dynamic_cast<back::Gradient*>(target->gradient);
-		return gradient != nullptr? gradient->merge_gradient(input) : target->gradient;
+	auto gradient = target->gradient;
+	if (gradient != nullptr) {
+		if (back_operator == nullptr)
+			return gradient;
+		else if (gradient->gradient != back_operator) {
+			if (gradient->gradient != nullptr)
+				back_operator->inputs.push_back(gradient->gradient);
+			gradient->gradient = back_operator;
+
+			bool found = false;
+			set<Tensor*> visited;
+			back_operator->launch(&visited, gradient, [&found](Tensor* param, void* data) {
+				found |= static_cast<Tensor*>(data) == param;
+			});
+			if (!found) //remove redundent dependency or circular dependency
+				gradient->inputs.push_back(back_operator);
+			return back_operator;
+		}
+		else
+			return gradient;
 	}
 
-	auto gradient = target->generate_gradient(input);
+	gradient = target->generate_gradient(back_operator);
 	if (gradient == nullptr)
 		return nullptr;
-	gradient->gradient = input;
+	gradient->gradient = back_operator;
 	target->gradient = gradient;
 	return gradient;
 }
@@ -371,28 +372,28 @@ Tensor* type::BinaryOperator::generate_gradient(Tensor* generator)
 
 Tensor& LinearRegressionLoss(Tensor& y, Tensor& label)
 {
-	auto tensor = new back::Loss;
-	tensor->function = "linear_regression";
-	tensor->alias = tensor->function + "(" + y.alias + "," + label.alias + ")";
-	tensor->dependent_on(&y);
-	tensor->dependent_on(&label);
-	auto out_gradient = clnet::Gradient(&y, tensor);
-	tensor->peers.push_back(out_gradient);
-	return *tensor;
+	auto back = new back::Loss;
+	back->function = "linear_regression";
+	back->alias = back->function + "(" + y.alias + "," + label.alias + ")";
+	back->dependent_on(&y);
+	back->dependent_on(&label);
+	auto out_gradient = clnet::Gradient(&y, back);
+	back->peers.push_back(out_gradient);
+	return *back;
 }
 
 Tensor& CrossEntropyLoss(Tensor& y, Tensor& label)
 {
-	auto tensor = new back::Loss;
-	tensor->function = "negative_log_likelihood";
+	auto back = new back::Loss;
+	back->function = "negative_log_likelihood";
 	string softmax = "softmax(" + y.alias + ")";
-	tensor->alias = tensor->function + "(" + softmax + "," + label.alias + ")";
-	tensor->dependent_on(&y);
-	tensor->dependent_on(&label);
-	auto out_gradient = clnet::Gradient(&y, tensor);
-	tensor->peers.push_back(out_gradient);
-	new type::Output(y.dimensions, {tensor}, softmax);
-	return *tensor;
+	back->alias = back->function + "(" + softmax + "," + label.alias + ")";
+	back->dependent_on(&y);
+	back->dependent_on(&label);
+	auto out_gradient = clnet::Gradient(&y, back);
+	back->peers.push_back(out_gradient);
+	new type::Output(y.dimensions, {back}, softmax);
+	return *back;
 }
 
 Tensor& BatchNormalizedLayer(Tensor& input, float epsilon, float momentum, std::string name)
@@ -413,8 +414,8 @@ Tensor& BatchNormalizedLayer(Tensor& input, float epsilon, float momentum, std::
 	auto result = new type::Output(input.dimensions, {tensor}, name.empty()? tensor->alias : name);
 	new type::Output(input.dimensions, {tensor}, prefix + "deviation"); //peers[1]
 	new type::Output({input.dimensions.back()}, {tensor}, prefix + "std_dev"); //peers[2]
-	Bias({input.dimensions.back()}, prefix + "moving_mean", tensor);
-	Weight({input.dimensions.back()}, prefix + "moving_variance", tensor);
+	Parameter({input.dimensions.back()}, prefix + "moving_mean", tensor);
+	Parameter({input.dimensions.back()}, prefix + "moving_variance", tensor, "unit");
 	return *result;
 }
 
@@ -520,8 +521,7 @@ Tensor* type::LSTMCell::generate_gradient(Tensor* out_gradient)
 	auto back = new back::LSTMCell;
 	back->alias = "back:" + alias;
 	back->inputs.push_back(out_gradient); //inputs[0]: h_grad
-	auto in_gradient = clnet::Gradient(inputs[0], back); //z_grad: {batch_size, 4*dim_hidden}
-	in_gradient->dependent_on(back); //peers[0]: in_gradient
+	clnet::Gradient(inputs[0], back); //in_gradient: {batch_size, 4*dim_hidden}
 	back->peers.push_back(peers[2]); //peers[1]: gates_data
 	back->peers.push_back(peers[3]); //peers[2]: cell_no
 	back->peers.push_back(peers[1]); //peers[3]: previous hidden
@@ -588,7 +588,7 @@ Tensor* type::LSTM::generate_gradient(Tensor* out_gradient)
 	auto intput_timestamp_gradient = clnet::Gradient(peers[0]);
 	set<Tensor*> visited;
 	peers[1]->launch(&visited, intput_timestamp_gradient, [](Tensor* param, void* data) {
-		if (dynamic_cast<type::Weight*>(param) != nullptr || dynamic_cast<type::Bias*>(param) != nullptr)
+		if (dynamic_cast<type::Parameter*>(param) != nullptr)
 			static_cast<Tensor*>(data)->dependent_on(param->gradient);
 	});
 	back->peers.push_back(clnet::Gradient(inputs[0], back)); //peers[0]: x_grad
