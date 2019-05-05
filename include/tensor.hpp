@@ -116,6 +116,7 @@ void generate_all_gradients(Tensor* graph);
 #define CLNET_VALUE_MISMATCH_WARN 64
 #define CLNET_RUN_ON_SINGLE_DEVICE 128
 #define CLNET_RUN_ON_DISTRIBUTION 256
+#define CLNET_IN_CYCLE 512
 extern size_t CLNET_TENSOR_GLOBALS;
 
 // clnet::type **************************************************************************

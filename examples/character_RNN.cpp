@@ -198,9 +198,9 @@ T charRNN(bool is_predict)
 		indexer = new CharacterIndexer;
 		indexer->load_character_index(index_file);
 	}
-	const int S = is_predict? 1 : trainer->max_sequence_length();
+	const int S_LEN = is_predict? 1 : trainer->max_sequence_length();
 	const int V = is_predict? indexer->index_to_character.size() : trainer->vocabulary_size();
-	T data = Data({batch_size, S}, trainer, "data");
+	T data = Data({batch_size, S_LEN}, trainer, "data");
 
 	T embedding_matrix = Weight({V, num_embedding}, "embedding_matrix");
 	T embedding = Embedding(data, embedding_matrix);
@@ -213,22 +213,21 @@ T charRNN(bool is_predict)
 		return *predict_charRNN(output, lstm.peers[2], *indexer);
 
 	trainer->save_dictionary(index_file);
-	const float learning_rate = optional<float>("learning_rate", 0.064), weight_decay = 0;
-	T label = Data({batch_size, S}, trainer, "label");
+	const float learning_rate = optional<float>("learning_rate", 0.02), weight_decay = 0;
+	T label = Data({batch_size, S_LEN}, trainer, "label");
 	T loss = CrossEntropyLoss(output, label);
-	T SGD = StochasticGradientDescentUpdater(loss, learning_rate, weight_decay);
+	T SGD = StochasticGradientDescentUpdater(loss, learning_rate * S_LEN, weight_decay);
 
 	T initializer = GeneralInitializer(SGD.peers);
-	const int N_chars = batch_size * S, N_samples = trainer->sequences_size();
+	const int N_chars = batch_size * S_LEN, N_samples = trainer->sequences_size();
 	auto monitor = new InstantTensor("charRNN_monitor", {}, {}, [N_chars, N_samples, &loss](InstantTensor* self, DeviceInstance& I) {
 		auto optimizer = static_cast<type::IterativeOptimizer*>(self->peers[0]);
 		auto epoch = optimizer->current_epoch(I);
 
-		float accuracy = static_cast<back::Loss*>(&loss)->L(I);
-		accuracy = exp(-accuracy / N_chars);
+		float loss_value = static_cast<back::Loss*>(&loss)->L(I);
 		size_t duration = optimizer->milliseconds_since_last(I);
 		string speed = epoch == 0? to_string(duration) + "ms" : to_string(1000.0f * N_samples / duration) + "/s";
-		logger << "[" << I.ID << "," << epoch << "," << speed << "] accuracy: " << accuracy  << endl;
+		logger << "[" << I.ID << "," << epoch << "," << speed << "] loss: " << loss_value << " (perplexity: " << exp(-loss_value) << ")" << endl;
 	});
 //	Gradient(&output)->inputs.push_back(monitor); //compute accuracy for every mini batch
 	return IterativeOptimizer({&initializer}, {&SGD, trainer, monitor}, max_iters);

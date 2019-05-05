@@ -206,11 +206,12 @@ Tensor* Gradient(Tensor* target, Tensor* back_operator)
 		return nullptr;
 	auto gradient = target->gradient;
 	if (gradient != nullptr) {
-		if (back_operator == nullptr)
-			return gradient;
-		else if (gradient->gradient != back_operator) {
-			if (gradient->gradient != nullptr)
+		if (back_operator != nullptr && gradient->gradient != back_operator) {
+			if (gradient->gradient != nullptr) {
 				back_operator->inputs.push_back(gradient->gradient);
+				bool inCycle = (CLNET_TENSOR_GLOBALS & CLNET_IN_CYCLE) != 0;
+				gradient->gradient->inputs.push_back(inCycle? gradient->gradient : nullptr);
+			}
 			gradient->gradient = back_operator;
 
 			bool found = false;
@@ -220,10 +221,8 @@ Tensor* Gradient(Tensor* target, Tensor* back_operator)
 			});
 			if (!found) //remove redundent dependency or circular dependency
 				gradient->inputs.push_back(back_operator);
-			return back_operator;
 		}
-		else
-			return gradient;
+		return gradient;
 	}
 
 	gradient = target->generate_gradient(back_operator);
@@ -521,7 +520,8 @@ Tensor* type::LSTMCell::generate_gradient(Tensor* out_gradient)
 	auto back = new back::LSTMCell;
 	back->alias = "back:" + alias;
 	back->inputs.push_back(out_gradient); //inputs[0]: h_grad
-	clnet::Gradient(inputs[0], back); //in_gradient: {batch_size, 4*dim_hidden}
+	auto in_gradient = clnet::Gradient(inputs[0], back); //z_grad: {batch_size, 4*dim_hidden}
+	in_gradient->dependent_on(back); //peers[0]: in_gradient
 	back->peers.push_back(peers[2]); //peers[1]: gates_data
 	back->peers.push_back(peers[3]); //peers[2]: cell_no
 	back->peers.push_back(peers[1]); //peers[3]: previous hidden
@@ -583,7 +583,9 @@ Tensor* type::LSTM::generate_gradient(Tensor* out_gradient)
 	back->alias = "back:" + alias;
 	back->inputs.push_back(inputs[0]); //inputs[0]: x
 	back->inputs.push_back(out_gradient); //inputs[1]: out_grad
+	CLNET_TENSOR_GLOBALS |= CLNET_IN_CYCLE;
 	generate_all_gradients(peers[1]); //peers[1]: out
+	CLNET_TENSOR_GLOBALS ^= CLNET_IN_CYCLE;
 	// prepare weight/bias gradients and/or build back-propagation-through-time dependency
 	auto intput_timestamp_gradient = clnet::Gradient(peers[0]);
 	set<Tensor*> visited;

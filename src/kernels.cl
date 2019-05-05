@@ -15,7 +15,7 @@
 #ifndef NULL
 	#define NULL 0
 #endif
-
+#define gradient_set_type = 
 #define _gradient(z) 1.0f
 
 inline float sigmoid(float z)
@@ -97,7 +97,7 @@ kernel void feed_forward_fully_connected_sigmoid(global float* out, const global
 //Parallel: max(weight_Out_dim, batch_size) x weight_In_dim
 kernel void back_propagate_fully_connected_softrelu_gradient(global float* in_grad, global float* weight_grad,
 		global float* bias_grad,	const global float* weight, const global float* in, const global float* out,
-		const global float* out_grad, const int dim_out, const int dim_in, const int batch_size, const int attached)
+		const global float* out_grad, const int dim_out, const int dim_in, const int batch_size)
 {
 	const int GID = get_global_id(0);
 	const int k = GID % dim_in;
@@ -123,10 +123,7 @@ kernel void back_propagate_fully_connected_softrelu_gradient(global float* in_gr
 			const float out_grad_j = softrelu_gradient(out[n * dim_out + j]) * out_grad[n * dim_out + j];
 			sum_in_grad += weight_j * out_grad_j;
 		}
-		if (attached)
-			in_grad[n * dim_in + k] += sum_in_grad;
-		else
-			in_grad[n * dim_in + k] = sum_in_grad;
+		in_grad[n * dim_in + k] gradient_set_type sum_in_grad;
 	}
 }
 
@@ -170,7 +167,7 @@ kernel void back_propagate_fully_connected_softrelu_gradient_for_weight(global f
 //Standard implementation
 //Parallel: batch_size x weight_In_dim
 kernel void back_propagate_fully_connected_softrelu_gradient_for_data(global float* in_grad, const global float* weight,
-		const global float* out, const global float* out_grad, const int dim_out, const int dim_in, const int batch_size, const int attached)
+		const global float* out, const global float* out_grad, const int dim_out, const int dim_in, const int batch_size)
 {
 	const int GID = get_global_id(0);
 	const int k = GID % dim_in;
@@ -182,10 +179,7 @@ kernel void back_propagate_fully_connected_softrelu_gradient_for_data(global flo
 		const float out_grad_j = softrelu_gradient(out[n * dim_out + j]) * out_grad[n * dim_out + j];
 		sum_in_grad += weight_j * out_grad_j;
 	}
-	if (attached)
-		in_grad[n * dim_in + k] += sum_in_grad;
-	else
-		in_grad[n * dim_in + k] = sum_in_grad;
+	in_grad[n * dim_in + k] gradient_set_type sum_in_grad;
 }
 
 //Parallel: (batch_size * dim_hidden * get_local_size(0))
@@ -783,7 +777,7 @@ kernel void back_propagate_convolution_relu_gradient_for_weight(global float* we
 kernel void back_propagate_convolution_relu_gradient_for_input(global float* in_grad, const global float* weight, const global float* out,
 		const global float* out_grad, const int kernel_height, const int kernel_width, const int in_depth,
 		const int out_height, const int out_width, const int out_depth, const int stride_height, const int stride_width,
-		const int padding_height, const int padding_width, const int batch_size, const int attached/*, local float* out_local, local float* out_grad_local, local float* weight_local,
+		const int padding_height, const int padding_width, const int batch_size/*, local float* out_local, local float* out_grad_local, local float* weight_local,
 		const int local_weight_depth, const int local_height, const int local_width, const int local_depth*/)
 {
 //if (stride_height == 2 && kernel_width != 1)
@@ -826,10 +820,7 @@ kernel void back_propagate_convolution_relu_gradient_for_input(global float* in_
 			}
 		}
 	}
-	if (attached)
-		in_grad[GID] += sum_in_grad;
-	else
-		in_grad[GID] = sum_in_grad;
+	in_grad[GID] gradient_set_type sum_in_grad;
 //if (flag)
 //	printf("in_grad:%g\n", sum_in_grad);
 }
@@ -1093,7 +1084,7 @@ kernel void feed_forward_batch_normalization_for_inference(global float* out, co
 //Parallel: (in_depth * local(min(batch_size * H * W, work_group_size))) //for convolutional case
 kernel void back_propagate_batch_normalization(global float* in_grad, global float* gamma_grad, global float* beta_grad,
 		const global float* gamma, const global float* deviation, const global float* std_dev, const global float* out_grad,
-		global float* deviation_grad, const int dim_in, const int batch_size, const int attached)
+		global float* deviation_grad, const int dim_in, const int batch_size)
 {
 	const int GID = get_global_id(0);
 	const int parallel = get_local_size(0); //parallel addition, trade space for time
@@ -1132,15 +1123,11 @@ kernel void back_propagate_batch_normalization(global float* in_grad, global flo
 	float variance_grad = variance_grad_[0];
 	float mu_grad = mu_grad_[0], mu_tmp1 = mu_tmp1_[0], mu_tmp2 = mu_tmp2_[0];
 	float gamma_gradient = gamma_gradient_[0], beta_gradient = beta_gradient_[0];
-	
+
 	variance_grad *= - 0.5f / pow(std_dev[k], 3);
 	mu_grad = - mu_tmp1 / std_dev[k] - 2 * variance_grad / batch_size * mu_tmp2;
-	if (attached)
-		for (int i = n; i < batch_size; i += parallel)
-			in_grad[i * dim_in + k] += deviation_grad[i * dim_in + k] / std_dev[k] + 2 * variance_grad * deviation[i * dim_in + k] / batch_size + mu_grad / batch_size;
-	else
-		for (int i = n; i < batch_size; i += parallel)
-			in_grad[i * dim_in + k] = deviation_grad[i * dim_in + k] / std_dev[k] + 2 * variance_grad * deviation[i * dim_in + k] / batch_size + mu_grad / batch_size;
+	for (int i = n; i < batch_size; i += parallel)
+		in_grad[i * dim_in + k] gradient_set_type deviation_grad[i * dim_in + k] / std_dev[k] + 2 * variance_grad * deviation[i * dim_in + k] / batch_size + mu_grad / batch_size;
 	gamma_gradient /= std_dev[k];
 	gamma_grad[k] = gamma_gradient;
 	beta_grad[k] = beta_gradient;
@@ -1149,7 +1136,7 @@ kernel void back_propagate_batch_normalization(global float* in_grad, global flo
 //Parallel: (dim_in * local(batch_size))
 kernel void back_propagate_batch_normalization_small(global float* in_grad, global float* gamma_grad, global float* beta_grad,
 		const global float* gamma, const global float* deviation, const global float* std_dev,
-		const global float* out_grad, local float* deviation_grad, const int dim_in, const int batch_size, const int attached)
+		const global float* out_grad, local float* deviation_grad, const int dim_in, const int batch_size)
 {
 	const int GID = get_global_id(0);
 	const int k = GID / batch_size;
@@ -1170,10 +1157,7 @@ kernel void back_propagate_batch_normalization_small(global float* in_grad, glob
 	}
 	variance_grad *= - 0.5f / pow(std_dev[k], 3);
 	mu_grad = - mu_tmp1 / std_dev[k] - 2 * variance_grad / batch_size * mu_tmp2;
-	if (attached)
-		in_grad[n * dim_in + k] += deviation_grad[n] / std_dev[k] + 2 * variance_grad * deviation[n * dim_in + k] / batch_size + mu_grad / batch_size;
-	else
-		in_grad[n * dim_in + k] = deviation_grad[n] / std_dev[k] + 2 * variance_grad * deviation[n * dim_in + k] / batch_size + mu_grad / batch_size;
+	in_grad[n * dim_in + k] gradient_set_type deviation_grad[n] / std_dev[k] + 2 * variance_grad * deviation[n * dim_in + k] / batch_size + mu_grad / batch_size;
 	gamma_gradient /= std_dev[k];
 	gamma_grad[k] = gamma_gradient;
 	beta_grad[k] = beta_gradient;
@@ -1190,10 +1174,7 @@ kernel void feed_forward_activation_sigmoid(global float* out, const global floa
 kernel void back_propagate_activation_sigmoid(global float* in_grad, const global float* out_grad, const global float* out, const int attached)
 {
 	const int GID = get_global_id(0);
-	if (attached)
-		in_grad[GID] += sigmoid_gradient(out[GID]) * out_grad[GID];
-	else
-		in_grad[GID] = sigmoid_gradient(out[GID]) * out_grad[GID];
+	in_grad[GID] gradient_set_type sigmoid_gradient(out[GID]) * out_grad[GID];
 }
 
 //Parallel: (in_size * local_size)

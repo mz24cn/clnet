@@ -122,10 +122,18 @@ string generate_kernel_sources(DeviceInstance& I, const cl::Device& device, unor
 	return sources;
 }
 
+string gradient_set_type(string key, bool attached)
+{
+	string code = kernels_source[key];
+	if (!attached)
+		return code;
+	replace_all(code, "gradient_set_type", "+=");
+	replace_all(code, key, key + "_attached");
+	return code;
+}
+
 void Tensor::launch(set<Tensor*>* executed, void* data, function<void(Tensor*, void*)> functor)
 {
-//	if (alias == "back:lstm_cell1")
-//		cout << std::endl;
 	if (executed->count(this) == 0) {
 		executed->insert(this); //stop cycle access by inserting before inputs access
 		for (auto tensor : inputs)
@@ -192,17 +200,6 @@ cl::Kernel& prepare_for_running_kernel(Tensor* tensor, DeviceInstance& I, int nu
 		if (input != nullptr && input->volume > 0) //exclude "pure kernel" tensor
 			I.precondition_events.push_back(I.events[input]);
 	return I.kernels[tensor][number];
-}
-
-bool is_attached_for_tensor(Tensor* tensor, DeviceInstance& I)
-{
-	auto iter = I.events.find(tensor);
-	if (iter != I.events.end()) {
-		I.precondition_events.push_back(iter->second);
-		return true;
-	}
-	else
-		return false;
 }
 
 #define FULLY_CONNECTED_STD_DIM_IN_UPLIMIT 512
@@ -405,10 +402,13 @@ string back::FullyConnectedLayer::generate_source_code(DeviceInstance& I)
 	auto weight = peers[2]; //peers[2]: weight
 	int dim_in = weight->dimensions.front();
 	string code;
+	bool attached = inputs.size() > 1 && inputs[1] == this; //TODO
 	if (dim_in < FULLY_CONNECTED_STD_DIM_IN_UPLIMIT_BP)
-		code = kernels_source["back_propagate_fully_connected_softrelu_gradient"];
+		code = gradient_set_type("back_propagate_fully_connected_softrelu_gradient", attached);
 	else
-		code = kernels_source["back_propagate_fully_connected_softrelu_gradient_for_bias"] + "\n" + kernels_source["back_propagate_fully_connected_softrelu_gradient_for_weight"] + "\n" + kernels_source["back_propagate_fully_connected_softrelu_gradient_for_data"];
+		code = kernels_source["back_propagate_fully_connected_softrelu_gradient_for_bias"] + "\n" +
+			kernels_source["back_propagate_fully_connected_softrelu_gradient_for_weight"] + "\n" +
+			gradient_set_type("back_propagate_fully_connected_softrelu_gradient_for_data", attached);
 	if (activation != "softrelu")
 		replace_all(code, "softrelu", activation);
 
@@ -445,7 +445,6 @@ void back::FullyConnectedLayer::run(DeviceInstance& I)
 		kernel.setArg(7, dim_out);
 		kernel.setArg(8, dim_in);
 		kernel.setArg(9, N);
-		kernel.setArg(10, (int) is_attached_for_tensor(weight_gradient, I)); //merge_gradient mode
 
 		cl::Event& event = I.events[weight_gradient];
 		cl::NDRange global(global_size);
@@ -499,7 +498,7 @@ void back::FullyConnectedLayer::run(DeviceInstance& I)
 			kernel2.setArg(4, dim_out);
 			kernel2.setArg(5, dim_in);
 			kernel2.setArg(6, N);
-			kernel2.setArg(7, (int) is_attached_for_tensor(in_gradient, I)); //merge_gradient mode
+
 			I.queue.enqueueNDRangeKernel(kernel2, cl::NullRange, cl::NDRange(N * dim_in), cl::NullRange, &I.precondition_events, &I.events[in_gradient]);
 		}
 	}
@@ -507,7 +506,8 @@ void back::FullyConnectedLayer::run(DeviceInstance& I)
 
 string back::BatchNormalizedLayer::generate_source_code(DeviceInstance& I)
 {
-	return kernels_source["back_propagate_batch_normalization"] + "\n" + kernels_source["back_propagate_batch_normalization_small"];
+	bool attached = false; //inputs.size() > 1 && inputs[1] == nullptr; //TODO
+	return gradient_set_type("back_propagate_batch_normalization", attached) + "\n" + gradient_set_type("back_propagate_batch_normalization_small", attached);
 }
 
 void back::BatchNormalizedLayer::run(DeviceInstance& I)
@@ -531,7 +531,6 @@ void back::BatchNormalizedLayer::run(DeviceInstance& I)
 	}
 	kernel.setArg(8, dim_in);
 	kernel.setArg(9, N);
-	kernel.setArg(10, (int) is_attached_for_tensor(peers[5], I)); //merge_gradient mode
 	int parallel = find_proper_local_size(N, I.work_group_size);
 	cl::NDRange global(dim_in * parallel);
 	cl::NDRange local(parallel);
@@ -612,6 +611,7 @@ void type::StochasticGradientDescentUpdater::run(DeviceInstance& I)
 	else {
 		auto& kernel = I.kernels[this].front();
 
+		set<Tensor*> gradients;
 		for (int i = 0, N = peers.size(); i < N ; i++) {
 			auto parameter = peers[i];
 			I.precondition_events.clear();
@@ -683,28 +683,37 @@ void type::GeneralInitializer::run_globally(DeviceInstance& I)
 {
 	default_random_engine generator;
 	for (auto tensor : peers) {
-		type::Parameter* param;
-		if ((param = dynamic_cast<type::Parameter*>(tensor)) == nullptr)
-			continue;
-
-//		if (dynamic_cast<type::Weight*>(param) != nullptr) {
-//			int64 fan_in = param->volume / param->dimensions.back(), fan_out = param->volume / param->dimensions.front();
-//			normal_distribution<float> distribution(mu, sigma * sqrt(2.0f / fan_in)); //Delving deep into rectifiers: Surpassing human-level performance on ImageNet classification. He, K. et al. (2015)
-//			for (int64 hidden = 0; hidden < fan_out; hidden++)
-//				for (int64 k = 0, K = param->volume / fan_out; k < K; k++)
-//					param->pointer[k * fan_out + hidden] = (float) distribution(generator);
-//		}
-//		else if (param->type_hint.find("unit") != string::npos)
-//			for (int64 i = 0; i < param->volume; i++)
-//				param->pointer[i] = 1.0f;
-//		else if (param->type_hint.find("uniform") != string::npos) {
-//			uniform_real_distribution<float> distribution(mu, sigma);
-//			for (int64 i = 0; i < param->volume; i++)
-//				param->pointer[i] = (float) distribution(generator);
-//		}
-//		else if (dynamic_cast<type::Bias*>(tensor) != nullptr) //Tensors have been initialized to zero
-//			for (float *p = tensor->pointer, *end = p + tensor->volume; p < end; p++)
-//				*p = 0;
+		if (dynamic_cast<Weight*>(tensor) != nullptr) {
+			if (dynamic_cast<type::BatchNormalizedLayer*>(tensor->peers[0]) != nullptr)
+				for (int64 i = 0; i < tensor->volume; i++)
+					tensor->pointer[i] = 1.0f;
+//			else if (dynamic_cast<type::ConvolutionKernel*>(tensor->peers[0]) != nullptr) {
+//				int64 fan_in = tensor->dimensions.front(), fan_out = tensor->volume / fan_in;
+//				normal_distribution<float> distribution(mu, sqrt(sigma / fan_in));
+//				for (int64 hidden = 0; hidden < fan_out; hidden++)
+//					for (int64 k = 0; k < fan_in; k++)
+//						tensor->pointer[k * fan_out + hidden] = (float) distribution(generator);
+//
+////				int64 fan_in = tensor->dimensions[1] * tensor->dimensions[2], channel = tensor->dimensions.back(); //TODO
+////				normal_distribution<float> distribution(mu, sqrt(sigma / fan_in));
+//////				for (float *p = tensor->pointer, *end = p + tensor->volume; p < end; p++)
+//////					*p = (float) distribution(generator);
+////				for (int64 c = 0; c < channel; c++)
+////					for (int64 k = 0; k < fan_in; k++)
+////						for (int64 filter = 0; filter < tensor->dimensions.front(); filter++)
+////							tensor->pointer[(filter * fan_in + k) * channel + c] = (float) distribution(generator);
+//			}
+			else {
+				int64 fan_in = tensor->dimensions.front(), fan_out = tensor->dimensions.back();
+				normal_distribution<float> distribution(mu, sqrt(sigma / fan_in));
+				for (int64 hidden = 0; hidden < fan_out; hidden++)
+					for (int64 k = 0; k < fan_in; k++)
+						tensor->pointer[k * fan_out + hidden] = (float) distribution(generator);
+			}
+		}
+		else if (dynamic_cast<Bias*>(tensor) == nullptr)
+			for (float *p = tensor->pointer, *end = p + tensor->volume; p < end; p++)
+				*p = 0; //(float) distribution(generator); TODO
 	}
 }
 
@@ -791,6 +800,7 @@ void type::LSTM::run(DeviceInstance& I)
 	kernel.setArg(7, dim_hidden);
 	cl::NDRange global(input->dimensions[0] * dim_hidden);
 	I.queue.enqueueNDRangeKernel(kernel, cl::NullRange, global, cl::NullRange, &I.precondition_events, &I.events[input_timestep]);
+	CLNET_TENSOR_GLOBALS |= CLNET_IN_CYCLE;
 	set<Tensor*> visited;
 	output_timestep->launch(&visited, &I);
 
@@ -804,6 +814,7 @@ void type::LSTM::run(DeviceInstance& I)
 		visited.clear();
 		output_timestep->launch(&visited, &I);
 	}
+	CLNET_TENSOR_GLOBALS ^= CLNET_IN_CYCLE;
 	if (peers.size() > 3) {
 		I.precondition_events.clear();
 		I.precondition_events.push_back(I.events[output_timestep]);
@@ -843,6 +854,7 @@ void back::LSTM::run(DeviceInstance& I)
 	kernel.setArg(9, dim_hidden);
 	cl::NDRange global(batch_size * dim_hidden);
 	I.queue.enqueueNDRangeKernel(kernel, cl::NullRange, global, cl::NullRange, &I.precondition_events, &I.events[output_timestep_gradient]);
+	CLNET_TENSOR_GLOBALS |= CLNET_IN_CYCLE;
 	set<Tensor*> visited;
 	input_timestep_gradient->launch(&visited, &I);
 
@@ -855,6 +867,7 @@ void back::LSTM::run(DeviceInstance& I)
 		visited.clear();
 		input_timestep_gradient->launch(&visited, &I);
 	}
+	CLNET_TENSOR_GLOBALS ^= CLNET_IN_CYCLE;
 	I.precondition_events.clear();
 	I.precondition_events.push_back(I.events[input_timestep_gradient]);
 	kernel.setArg(3, nullptr); //out_grad
@@ -1157,7 +1170,8 @@ void type::ConvolutionLayer::run(DeviceInstance& I)
 
 string back::ConvolutionLayer::generate_source_code(DeviceInstance& I)
 {
-	string code = kernels_source["back_propagate_convolution_relu_gradient_for_weight"] + "\n" + kernels_source["back_propagate_convolution_relu_gradient_for_input"];
+	bool attached = inputs.size() > 1 && inputs[1] == nullptr; //TODO
+	string code = kernels_source["back_propagate_convolution_relu_gradient_for_weight"] + "\n" + gradient_set_type("back_propagate_convolution_relu_gradient_for_input", attached);
 	auto& activation = static_cast<type::ConvolutionLayer*>(peers[0])->activation;
 	if (activation != "relu")
 		replace_all(code, "relu", activation);
@@ -1232,7 +1246,6 @@ void back::ConvolutionLayer::run(DeviceInstance& I)
 	kernel.setArg(12, padding_height);
 	kernel.setArg(13, padding_weight);
 	kernel.setArg(14, batch_size);
-	kernel.setArg(15, (int) is_attached_for_tensor(in_gradient, I)); //merge gradient mode for input
 //	kernel.setArg(16, outMem);
 //	kernel.setArg(17, outGradMem);
 //	kernel.setArg(18, weightMem);
@@ -1346,7 +1359,8 @@ void type::Activation::run(DeviceInstance& I)
 
 string back::Activation::generate_source_code(DeviceInstance& I)
 {
-	string code = kernels_source["back_propagate_activation_sigmoid"];
+	bool attached = false;
+	string code = gradient_set_type("back_propagate_activation_sigmoid", attached);
 	if (function != "sigmoid")
 		replace_all(code, "sigmoid", function);
 
@@ -1360,7 +1374,6 @@ void back::Activation::run(DeviceInstance& I)
 	kernel.setArg(0, I.buffers[in_gradient]);
 	kernel.setArg(1, I.buffers[out_grad]);
 	kernel.setArg(2, I.buffers[output]);
-	kernel.setArg(3, (int) is_attached_for_tensor(in_gradient, I));
 
 	cl::NDRange global(output->volume);
 	I.queue.enqueueNDRangeKernel(kernel, cl::NullRange, global, cl::NullRange, &I.precondition_events, &I.events[in_gradient]);

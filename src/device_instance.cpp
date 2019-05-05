@@ -88,6 +88,8 @@ void DeviceInstance::initialize()
 	local_memory_size = device.getInfo<CL_DEVICE_LOCAL_MEM_SIZE>();
 
 	cl::Context context(device);
+	reload_kernels(device, context, *this); //TODO
+
 #if CL_HPP_TARGET_OPENCL_VERSION < 200
 	queue = cl::CommandQueue(context, device);
 #else
@@ -97,8 +99,6 @@ void DeviceInstance::initialize()
 	for (auto tensor : Tensor::ALL)
 		if (ID >= 0 || dynamic_cast<type::Parameter*>(tensor) != nullptr || dynamic_cast<back::Gradient*>(tensor) != nullptr)
 			tensor->initialize(this);
-
-	reload_kernels(device, context, *this); //Considering resource limitation, generate source code after finishing initialization
 }
 
 DeviceInstance& DeviceInstance::create(cl::Device& cl_device, int id)
@@ -355,7 +355,6 @@ void wait_for_all_kernels_finished(DeviceInstance& I)
 {
 	for (auto& iter : I.events)
 		iter.second.wait();
-	I.events.clear(); //used by is_attached_for_tensor()
 }
 
 vector<cl::Device>& OpenCL_::find_devices()
