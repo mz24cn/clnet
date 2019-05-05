@@ -1171,7 +1171,7 @@ kernel void feed_forward_activation_sigmoid(global float* out, const global floa
 }
 
 //Parallel: (sizeof(data))
-kernel void back_propagate_activation_sigmoid(global float* in_grad, const global float* out_grad, const global float* out, const int attached)
+kernel void back_propagate_activation_sigmoid(global float* in_grad, const global float* out_grad, const global float* out)
 {
 	const int GID = get_global_id(0);
 	in_grad[GID] gradient_set_type sigmoid_gradient(out[GID]) * out_grad[GID];
