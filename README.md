@@ -740,4 +740,9 @@ inference_bias[10]: clnet::type::Bias   10
 [0,28,759.407593/s] train loss: 0.559696        test set accuracy: 76.91%
 [0,29,759.361511/s] train loss: 0.80741 test set accuracy: 78.15%
 [0,30,758.970032/s] train loss: 0.607492        test set accuracy: 78.55%
+SGD.learning_rate = 0.005
+[debugger] SGD.learning_rate = 0.064
+[debugger] SGD.learning_rate = 0.005
+[0,31,758.567383/s] train loss: 0.320696        test set accuracy: 82.93%
+[0,32,758.555908/s] train loss: 0.218599        test set accuracy: 82.99%
 </pre>
