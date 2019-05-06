@@ -1,22 +1,22 @@
 
 # clNET: **OpenCL for Nets**
-A Deep Learning Framework based on OpenCL, written by C++. Supports popular MLP, RNN(LSTM), CNN neural networks. 
+A Deep Learning Framework based on OpenCL, written by C++. Supports popular MLP, RNN(LSTM), CNN(ResNet) neural networks. 
 基于OpenCL的深度学习计算框架，C++开发，支持多层感知器，长短时记忆模型，卷积神经网络。
 
-Progress: Currently clnet can successfully run fully connected neural networks (MLP), CharRNN (LSTM) which uses dynamic computing graph to deal with loops, CNN (LeNet5 on MNIST dataset).  
+Progress: Currently clnet can successfully run fully connected neural networks (MLP), CharRNN (LSTM) which uses dynamic computing graph to deal with loops, CNN (LeNet5 on MNIST dataset), WRN (Wide Residual Networks, CIFAR).  
 Tested on Nvidia GTX1080, AMD R9 295X2, Intel HD Graphics 630 GPU.  
 Support multiple devices training.
 
 已完成进度：
-可成功运行MLP全连接多层感知器，CharRNN（LSTM，基于动态计算图的循环实现），CNN（LeNet5，MNIST）的训练及推断。  
+可成功运行MLP全连接多层感知器，CharRNN（LSTM，基于动态计算图的循环实现），CNN（LeNet5，MNIST），WRN（CIFAR）的训练及推断。  
 三种模型均在Nvidia GTX1080, AMD R9 295X2, Intel HD Graphics 630以及Intel CPU，AMD CPU/APU上测试通过。  
 测试通过的编译环境：  
 Windows 10，MSVS2015；  
 Linux CentOS 7，g++ 4.8.5，Makefile；  
 eclipse/CDT，MinGW64 6；  
 eclipse/CDT，CrossGCC: CodeBench Lite 2014/05（gcc 4.8.3）；  
-Kernel性能尚待进一步优化（矩阵乘法gemm及小卷积核FFT优化算法）。   
-支持多显卡训练。分布式有待开发。
+支持多显卡训练。
+TODO list：Kernel性能尚待进一步优化，分布式有待开发。
 
 演示例子运行命令行：  
 全连接MLP：  

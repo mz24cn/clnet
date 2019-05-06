@@ -68,7 +68,7 @@ int main(int argc, char** argv)
 
 	if (argc < 2) {
 		cout << "OpenCLNet [model] [/0,1,...] [/p] [/ld] [/ds] [/os] [/nf] [/nd] [/ss] [/all] [:{key} {value}]\n";
-		cout << "model\t\tcurrent support: MLP,MLP_softmax,charRNN,MNIST_CNN, CIFAR_WRN\n";
+		cout << "model\t\tcurrent support: MLP,MLP_softmax,charRNN,MNIST_CNN,CIFAR_WRN\n";
 		cout << "/ld\t\tlist devices\n";
 		cout << "/all\t\tuse all device types including CPU and ACCELERATOR (GPU only is default)\n";
 		cout << ":{key} {value}\tset named parameter with {key}, {value} pair\n";
