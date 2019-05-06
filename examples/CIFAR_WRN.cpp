@@ -45,7 +45,7 @@ public:
 		peers.push_back(test_images);
 		peers.push_back(test_labels);
 
-		use_shuffle = false; //TODO: debug
+		use_shuffle = true;
 		set_total_samples(peers[0]->dimensions[0]/*640*/); //small value is used for debug
 		peers.push_back(new type::MiniBatch(size, peers[2]->dimensions[0]/*160*/)); //peers[4]
 	}
@@ -173,33 +173,6 @@ T CIFAR_WRN(bool is_predict)
 	T pool = Pooling(activation2, {8}, {1}, "average", false, "pool");
 	T reshape = Reshape(pool, {pool.dimensions[0], pool.volume / pool.dimensions[0]});
 	T inference = FullyConnectedLayer(reshape, class_num, "", "inference");
-
-//	const int kernel_size = 5, stride = 1, filters1 = 20, filters2 = 50, filters3 = 480;
-//	const string activation = "tanh", pooling_type = "max";
-//	T conv1 = ConvolutionLayer(*tensor, filters1, kernel_size, stride, "", true, "conv1");
-//	T BN1 = BatchNormalizedLayer(conv1, 0.00001f, 0.1f, "BN1");
-//	T ACT1 = tanh(BN1);
-//	T pool1 = Pooling(ACT1, {2}, {}, pooling_type, true, "pool1");
-//	T conv2 = ConvolutionLayer(pool1, filters2, kernel_size, stride, "", true, "conv2");
-//	T BN2 = BatchNormalizedLayer(conv2, 0.00001f, 0.1f, "BN2");
-//	T ACT2 = tanh(BN2);
-//	T pool2 = Pooling(ACT2, {2}, {}, pooling_type, true, "pool2");
-//	T conv3 = ConvolutionLayer(pool2, filters3, 2, stride, activation, true, "conv3");
-//	T BN3 = BatchNormalizedLayer(conv2, 0.00001f, 0.1f, "BN3");
-//	T ACT3 = tanh(BN3);
-//	T pool3 = Pooling(ACT3, {2}, {}, pooling_type, true, "pool3");
-//	T reshape = Reshape(pool3, {pool3.dimensions[0], pool3.volume / pool3.dimensions[0]});
-//	T feature = FullyConnectedLayer(reshape, filters3, activation, "feature");
-//	T inference = FullyConnectedLayer(feature, class_num, "", "inference");
-
-//	T conv1 = ConvolutionLayer(*tensor, filters1, kernel_size, stride, activation, true, "conv1");
-//	T pool1 = Pooling(conv1, {2}, {}, pooling_type, true, "pool1");
-//	T conv2 = ConvolutionLayer(pool1, filters2, kernel_size, stride, activation, true, "conv2");
-//	T pool2 = Pooling(conv2, {2}, {}, pooling_type, true, "pool2");
-//	T reshape = Reshape(pool2, {pool2.dimensions[0], pool2.volume / pool2.dimensions[0]});
-//	T feature = FullyConnectedLayer(reshape, filters3, activation, "feature");
-//	T inference = FullyConnectedLayer(feature, class_num, "", "inference");
-
 	if (is_predict)
 		return inference;
 
@@ -241,7 +214,7 @@ T CIFAR_WRN(bool is_predict)
 		auto tester = static_cast<type::MiniBatch*>(iterator->peers[4]);
 		auto& offset = reinterpret_cast<int*>(I.pointers[tester])[0];
 		int correct = 0, N = inference.dimensions[0];
-		CLNET_TENSOR_GLOBALS |= CLNET_PREDICT_ONLY;
+//		CLNET_TENSOR_GLOBALS |= CLNET_PREDICT_ONLY;
 		while (tester->has_next(I)) {
 			visited.clear();
 			inference.launch(&visited, &I);
@@ -255,7 +228,7 @@ T CIFAR_WRN(bool is_predict)
 				if ((max_element(output, output + class_num) - output) == *labels)
 					correct++;
 		}
-		CLNET_TENSOR_GLOBALS ^= CLNET_PREDICT_ONLY;
+//		CLNET_TENSOR_GLOBALS ^= CLNET_PREDICT_ONLY;
 		float accuracy = (int) (10000.0f * correct / iterator->peers[2]->dimensions[0]) / 100.0f;
 		logger << "\ttest set accuracy: " << accuracy  << "%" << endl;
 		offset = -1; //random_shuffle on test set is not needed.

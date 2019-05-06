@@ -402,7 +402,7 @@ string back::FullyConnectedLayer::generate_source_code(DeviceInstance& I)
 	auto weight = peers[2]; //peers[2]: weight
 	int dim_in = weight->dimensions.front();
 	string code;
-	bool attached = inputs.size() > 1 && inputs[1] == this; //TODO
+	bool attached = inputs.size() > 1 && inputs[1] == this; //TODO: currently only for LSTM
 	if (dim_in < FULLY_CONNECTED_STD_DIM_IN_UPLIMIT_BP)
 		code = gradient_set_type("back_propagate_fully_connected_softrelu_gradient", attached);
 	else
@@ -506,7 +506,7 @@ void back::FullyConnectedLayer::run(DeviceInstance& I)
 
 string back::BatchNormalizedLayer::generate_source_code(DeviceInstance& I)
 {
-	bool attached = false; //inputs.size() > 1 && inputs[1] == nullptr; //TODO
+	bool attached = inputs.size() > 1 && inputs[1] != nullptr; //TODO
 	return gradient_set_type("back_propagate_batch_normalization", attached) + "\n" + gradient_set_type("back_propagate_batch_normalization_small", attached);
 }
 
@@ -684,36 +684,25 @@ void type::GeneralInitializer::run_globally(DeviceInstance& I)
 	default_random_engine generator;
 	for (auto tensor : peers) {
 		if (dynamic_cast<Weight*>(tensor) != nullptr) {
-			if (dynamic_cast<type::BatchNormalizedLayer*>(tensor->peers[0]) != nullptr)
-				for (int64 i = 0; i < tensor->volume; i++)
-					tensor->pointer[i] = 1.0f;
-//			else if (dynamic_cast<type::ConvolutionKernel*>(tensor->peers[0]) != nullptr) {
-//				int64 fan_in = tensor->dimensions.front(), fan_out = tensor->volume / fan_in;
-//				normal_distribution<float> distribution(mu, sqrt(sigma / fan_in));
-//				for (int64 hidden = 0; hidden < fan_out; hidden++)
-//					for (int64 k = 0; k < fan_in; k++)
-//						tensor->pointer[k * fan_out + hidden] = (float) distribution(generator);
-//
-////				int64 fan_in = tensor->dimensions[1] * tensor->dimensions[2], channel = tensor->dimensions.back(); //TODO
-////				normal_distribution<float> distribution(mu, sqrt(sigma / fan_in));
-//////				for (float *p = tensor->pointer, *end = p + tensor->volume; p < end; p++)
-//////					*p = (float) distribution(generator);
-////				for (int64 c = 0; c < channel; c++)
-////					for (int64 k = 0; k < fan_in; k++)
-////						for (int64 filter = 0; filter < tensor->dimensions.front(); filter++)
-////							tensor->pointer[(filter * fan_in + k) * channel + c] = (float) distribution(generator);
-//			}
+			if (tensor->dimensions.size() == 1) {
+				if (tensor->gradient != nullptr) {
+					uniform_real_distribution<float> distribution(mu, sigma);
+					for (int64 i = 0; i < tensor->volume; i++)
+						tensor->pointer[i] = (float) distribution(generator);
+				}
+				else
+					for (int64 i = 0; i < tensor->volume; i++)
+						tensor->pointer[i] = 1.0f;
+			}
 			else {
-				int64 fan_in = tensor->dimensions.front(), fan_out = tensor->dimensions.back();
-				normal_distribution<float> distribution(mu, sqrt(sigma / fan_in));
+				int64 fan_in = tensor->volume / tensor->dimensions.back(), fan_out = tensor->volume / tensor->dimensions.front();
+				normal_distribution<float> distribution(mu, sigma * sqrt(2.0f / fan_in)); //Delving deep into rectifiers: Surpassing human-level performance on ImageNet classification. He, K. et al. (2015)
 				for (int64 hidden = 0; hidden < fan_out; hidden++)
-					for (int64 k = 0; k < fan_in; k++)
+					for (int64 k = 0, K = tensor->volume / fan_out; k < K; k++)
 						tensor->pointer[k * fan_out + hidden] = (float) distribution(generator);
 			}
 		}
-		else if (dynamic_cast<Bias*>(tensor) == nullptr)
-			for (float *p = tensor->pointer, *end = p + tensor->volume; p < end; p++)
-				*p = 0; //(float) distribution(generator); TODO
+		//Bias default initialized to zero
 	}
 }
 
@@ -1170,7 +1159,7 @@ void type::ConvolutionLayer::run(DeviceInstance& I)
 
 string back::ConvolutionLayer::generate_source_code(DeviceInstance& I)
 {
-	bool attached = inputs.size() > 1 && inputs[1] == nullptr; //TODO
+	bool attached = inputs.size() > 1 && inputs[1] != nullptr; //TODO
 	string code = kernels_source["back_propagate_convolution_relu_gradient_for_weight"] + "\n" + gradient_set_type("back_propagate_convolution_relu_gradient_for_input", attached);
 	auto& activation = static_cast<type::ConvolutionLayer*>(peers[0])->activation;
 	if (activation != "relu")
@@ -1257,6 +1246,7 @@ void back::ConvolutionLayer::run(DeviceInstance& I)
 	cl::NDRange global(batch_size * in_depth, in_height, in_width);
 //	cl::NDRange local(in_depth > 1? 5 : in_depth, in_height, in_width); //TODO
 	I.queue.enqueueNDRangeKernel(kernel, cl::NullRange, global, cl::NullRange/*local*/, &I.precondition_events, &I.events[in_gradient]);
+	I.events[this] = I.events[in_gradient]; //used for 'attached' processing
 	}
 }
 

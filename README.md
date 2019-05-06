@@ -552,3 +552,190 @@ clnet::type::IterativeOptimizer         IterativeOptimizer[4]
 [0,26,1964.829590/s] train accuracy: 0.995127   test set accuracy: 99.11%
 [0,27,1964.572266/s] train accuracy: 0.998763   test set accuracy: 99.15%
 </pre>
+
+支持残差网络Wide residual networks (http://arxiv.org/abs/1605.07146)。命令行中“/dso”生成仅包含运算Tensor的执行树，“/pp”打印参数清单（按大小倒序）：
+```
+./build/OpenCLNet CIFAR_WRN :cifar_folder /cifar-10-batches-bin/ :width 1 :N 1 :batch_size 64 /dso /pp /1
+```  
+<pre>
+clnet::type::GeneralInitializer         GeneralInitializer
+clnet::type::IterativeOptimizer         IterativeOptimizer[4]
+        CIFARImageIterator              [50049]
+-               clnet::Tensor           train_images[50048,32,32,3]
+                clnet::Tensor           train_labels[50048,1]
+                clnet::Tensor           test_images[10048,32,32,3]
+                clnet::Tensor           test_labels[10048,1]
+        clnet::Tensor           train_images_data[64,32,32,3]
+        clnet::type::ConvolutionLayer           conv0=Convolution:3x3(train_images_data)
+        clnet::type::BatchNormalizedLayer               group0_block0_bn0=group0_block0_bn0_gamma*normalize(conv0)+group0_block0_bn0_beta
+        clnet::type::Activation         ReLU(group0_block0_bn0)
+        clnet::type::ConvolutionLayer           group0_block0_conv0=Convolution:3x3(relu(group0_block0_bn0))
+        clnet::type::BatchNormalizedLayer               group0_block0_bn1=group0_block0_bn1_gamma*normalize(group0_block0_conv0)+group0_block0_bn1_beta
+        clnet::type::Activation         ReLU(group0_block0_bn1)
+        clnet::type::ConvolutionLayer           group0_block0_conv1=Convolution:3x3(relu(group0_block0_bn1))
+        clnet::type::BinaryOperator             group0_block0_conv1+conv0
+        clnet::type::BatchNormalizedLayer               group1_block0_bn0=group1_block0_bn0_gamma*normalize((group0_block0_conv1+conv0))+group1_block0_bn0_beta
+        clnet::type::Activation         ReLU(group1_block0_bn0)
+        clnet::type::ConvolutionLayer           group1_block0_conv0=Convolution:3x3(relu(group1_block0_bn0))
+        clnet::type::BatchNormalizedLayer               group1_block0_bn1=group1_block0_bn1_gamma*normalize(group1_block0_conv0)+group1_block0_bn1_beta
+        clnet::type::Activation         ReLU(group1_block0_bn1)
+        clnet::type::ConvolutionLayer           group1_block0_conv1=Convolution:3x3(relu(group1_block0_bn1))
+        clnet::type::ConvolutionLayer           group1_block0_convdim=Convolution:1x1(relu(group1_block0_bn0))
+        clnet::type::BinaryOperator             group1_block0_conv1+group1_block0_convdim
+        clnet::type::BatchNormalizedLayer               group2_block0_bn0=group2_block0_bn0_gamma*normalize((group1_block0_conv1+group1_block0_convdim))+group2_block0_bn0_beta
+        clnet::type::Activation         ReLU(group2_block0_bn0)
+        clnet::type::ConvolutionLayer           group2_block0_conv0=Convolution:3x3(relu(group2_block0_bn0))
+        clnet::type::BatchNormalizedLayer               group2_block0_bn1=group2_block0_bn1_gamma*normalize(group2_block0_conv0)+group2_block0_bn1_beta
+        clnet::type::Activation         ReLU(group2_block0_bn1)
+        clnet::type::ConvolutionLayer           group2_block0_conv1=Convolution:3x3(relu(group2_block0_bn1))
+        clnet::type::ConvolutionLayer           group2_block0_convdim=Convolution:1x1(relu(group2_block0_bn0))
+        clnet::type::BinaryOperator             group2_block0_conv1+group2_block0_convdim
+        clnet::type::BatchNormalizedLayer               bn=bn_gamma*normalize((group2_block0_conv1+group2_block0_convdim))+bn_beta
+        clnet::type::Activation         ReLU(bn)
+        clnet::type::Pooling            pool=Pooling(relu(bn),average)
+        clnet::type::Reshape            reshape[64,64]
+        clnet::type::FullyConnectedLayer                inference=inference_weight*reshape+inference_bias
+        clnet::Tensor           train_images_label[64]
+        clnet::back::Loss               negative_log_likelihood(softmax(inference),train_images_label)
+        clnet::back::FullyConnectedLayer                back:inference=inference_weight*reshape+inference_bias
+        clnet::back::Reshape            gradient(reshape)[64,64]
+        clnet::back::Pooling            back:pool=Pooling(relu(bn),average)
+        clnet::back::Activation         gradient(ReLU(bn))
+        clnet::back::BatchNormalizedLayer               back:bn=bn_gamma*normalize((group2_block0_conv1+group2_block0_convdim))+bn_beta
+        clnet::back::BinaryOperator             back:group2_block0_conv1+group2_block0_convdim
+        clnet::back::ConvolutionLayer           back:group2_block0_convdim=Convolution:1x1(relu(group2_block0_bn0))
+        clnet::back::ConvolutionLayer           back:group2_block0_conv1=Convolution:3x3(relu(group2_block0_bn1))
+        clnet::back::Activation         gradient(ReLU(group2_block0_bn1))
+        clnet::back::BatchNormalizedLayer               back:group2_block0_bn1=group2_block0_bn1_gamma*normalize(group2_block0_conv0)+group2_block0_bn1_beta
+        clnet::back::ConvolutionLayer           back:group2_block0_conv0=Convolution:3x3(relu(group2_block0_bn0))
+        clnet::back::Activation         gradient(ReLU(group2_block0_bn0))
+        clnet::back::BatchNormalizedLayer               back:group2_block0_bn0=group2_block0_bn0_gamma*normalize((group1_block0_conv1+group1_block0_convdim))+group2_block0_bn0_beta
+        clnet::back::BinaryOperator             back:group1_block0_conv1+group1_block0_convdim
+        clnet::back::ConvolutionLayer           back:group1_block0_convdim=Convolution:1x1(relu(group1_block0_bn0))
+        clnet::back::ConvolutionLayer           back:group1_block0_conv1=Convolution:3x3(relu(group1_block0_bn1))
+        clnet::back::Activation         gradient(ReLU(group1_block0_bn1))
+        clnet::back::BatchNormalizedLayer               back:group1_block0_bn1=group1_block0_bn1_gamma*normalize(group1_block0_conv0)+group1_block0_bn1_beta
+        clnet::back::ConvolutionLayer           back:group1_block0_conv0=Convolution:3x3(relu(group1_block0_bn0))
+        clnet::back::Activation         gradient(ReLU(group1_block0_bn0))
+        clnet::back::BatchNormalizedLayer               back:group1_block0_bn0=group1_block0_bn0_gamma*normalize((group0_block0_conv1+conv0))+group1_block0_bn0_beta
+        clnet::back::BinaryOperator             back:group0_block0_conv1+conv0
+        clnet::back::ConvolutionLayer           back:group0_block0_conv1=Convolution:3x3(relu(group0_block0_bn1))
+        clnet::back::Activation         gradient(ReLU(group0_block0_bn1))
+        clnet::back::BatchNormalizedLayer               back:group0_block0_bn1=group0_block0_bn1_gamma*normalize(group0_block0_conv0)+group0_block0_bn1_beta
+        clnet::back::ConvolutionLayer           back:group0_block0_conv0=Convolution:3x3(relu(group0_block0_bn0))
+        clnet::back::Activation         gradient(ReLU(group0_block0_bn0))
+        clnet::back::BatchNormalizedLayer               back:group0_block0_bn0=group0_block0_bn0_gamma*normalize(conv0)+group0_block0_bn0_beta
+        clnet::back::ConvolutionLayer           back:conv0=Convolution:3x3(train_images_data)
+        clnet::type::StochasticGradientDescentUpdater           SGD
+-       clnet::InstantTensor            CIFAR_WRN_monitor
+        clnet::InstantTensor            CIFAR_WRN_validator
+                CIFARImageIterator              [50049]
+-                       clnet::Tensor           train_images[50048,32,32,3]
+                        clnet::Tensor           train_labels[50048,1]
+                        clnet::Tensor           test_images[10048,32,32,3]
+                        clnet::Tensor           test_labels[10048,1]
+                clnet::Tensor           train_images_data[64,32,32,3]
+                clnet::type::ConvolutionLayer           conv0=Convolution:3x3(train_images_data)
+                clnet::type::BatchNormalizedLayer               group0_block0_bn0=group0_block0_bn0_gamma*normalize(conv0)+group0_block0_bn0_beta
+                clnet::type::Activation         ReLU(group0_block0_bn0)
+                clnet::type::ConvolutionLayer           group0_block0_conv0=Convolution:3x3(relu(group0_block0_bn0))
+                clnet::type::BatchNormalizedLayer               group0_block0_bn1=group0_block0_bn1_gamma*normalize(group0_block0_conv0)+group0_block0_bn1_beta
+                clnet::type::Activation         ReLU(group0_block0_bn1)
+                clnet::type::ConvolutionLayer           group0_block0_conv1=Convolution:3x3(relu(group0_block0_bn1))
+                clnet::type::BinaryOperator             group0_block0_conv1+conv0
+                clnet::type::BatchNormalizedLayer               group1_block0_bn0=group1_block0_bn0_gamma*normalize((group0_block0_conv1+conv0))+group1_block0_bn0_beta
+                clnet::type::Activation         ReLU(group1_block0_bn0)
+                clnet::type::ConvolutionLayer           group1_block0_conv0=Convolution:3x3(relu(group1_block0_bn0))
+                clnet::type::BatchNormalizedLayer               group1_block0_bn1=group1_block0_bn1_gamma*normalize(group1_block0_conv0)+group1_block0_bn1_beta
+                clnet::type::Activation         ReLU(group1_block0_bn1)
+                clnet::type::ConvolutionLayer           group1_block0_conv1=Convolution:3x3(relu(group1_block0_bn1))
+                clnet::type::ConvolutionLayer           group1_block0_convdim=Convolution:1x1(relu(group1_block0_bn0))
+                clnet::type::BinaryOperator             group1_block0_conv1+group1_block0_convdim
+                clnet::type::BatchNormalizedLayer               group2_block0_bn0=group2_block0_bn0_gamma*normalize((group1_block0_conv1+group1_block0_convdim))+group2_block0_bn0_beta
+                clnet::type::Activation         ReLU(group2_block0_bn0)
+                clnet::type::ConvolutionLayer           group2_block0_conv0=Convolution:3x3(relu(group2_block0_bn0))
+                clnet::type::BatchNormalizedLayer               group2_block0_bn1=group2_block0_bn1_gamma*normalize(group2_block0_conv0)+group2_block0_bn1_beta
+                clnet::type::Activation         ReLU(group2_block0_bn1)
+                clnet::type::ConvolutionLayer           group2_block0_conv1=Convolution:3x3(relu(group2_block0_bn1))
+                clnet::type::ConvolutionLayer           group2_block0_convdim=Convolution:1x1(relu(group2_block0_bn0))
+                clnet::type::BinaryOperator             group2_block0_conv1+group2_block0_convdim
+                clnet::type::BatchNormalizedLayer               bn=bn_gamma*normalize((group2_block0_conv1+group2_block0_convdim))+bn_beta
+                clnet::type::Activation         ReLU(bn)
+                clnet::type::Pooling            pool=Pooling(relu(bn),average)
+                clnet::type::Reshape            reshape[64,64]
+                clnet::type::FullyConnectedLayer                inference=inference_weight*reshape+inference_bias
+
+Total number of parameters: 78,330, trainable: 77,850
+group2_block0_conv1_weight[64,3,3,64]: clnet::type::Weight      36,864
+group2_block0_conv0_weight[64,3,3,32]: clnet::type::Weight      18,432
+group1_block0_conv1_weight[32,3,3,32]: clnet::type::Weight      9,216
+group1_block0_conv0_weight[32,3,3,16]: clnet::type::Weight      4,608
+group0_block0_conv0_weight[16,3,3,16]: clnet::type::Weight      2,304
+group0_block0_conv1_weight[16,3,3,16]: clnet::type::Weight      2,304
+group2_block0_convdim_weight[64,1,1,32]: clnet::type::Weight    2,048
+inference_weight[64,10]: clnet::type::Weight    640
+group1_block0_convdim_weight[32,1,1,16]: clnet::type::Weight    512
+conv0_weight[16,3,3,3]: clnet::type::Weight     432
+bn_beta[64]: clnet::type::Bias  64
+bn_gamma[64]: clnet::type::Weight       64
+bn_moving_mean[64]: clnet::type::Parameter      64      -
+bn_moving_variance[64]: clnet::type::Parameter  64      -
+group2_block0_bn1_beta[64]: clnet::type::Bias   64
+group2_block0_bn1_gamma[64]: clnet::type::Weight        64
+group2_block0_bn1_moving_mean[64]: clnet::type::Parameter       64      -
+group2_block0_bn1_moving_variance[64]: clnet::type::Parameter   64      -
+group1_block0_bn1_beta[32]: clnet::type::Bias   32
+group1_block0_bn1_gamma[32]: clnet::type::Weight        32
+group1_block0_bn1_moving_mean[32]: clnet::type::Parameter       32      -
+group1_block0_bn1_moving_variance[32]: clnet::type::Parameter   32      -
+group2_block0_bn0_beta[32]: clnet::type::Bias   32
+group2_block0_bn0_gamma[32]: clnet::type::Weight        32
+group2_block0_bn0_moving_mean[32]: clnet::type::Parameter       32      -
+group2_block0_bn0_moving_variance[32]: clnet::type::Parameter   32      -
+group0_block0_bn0_beta[16]: clnet::type::Bias   16
+group0_block0_bn0_gamma[16]: clnet::type::Weight        16
+group0_block0_bn0_moving_mean[16]: clnet::type::Parameter       16      -
+group0_block0_bn0_moving_variance[16]: clnet::type::Parameter   16      -
+group0_block0_bn1_beta[16]: clnet::type::Bias   16
+group0_block0_bn1_gamma[16]: clnet::type::Weight        16
+group0_block0_bn1_moving_mean[16]: clnet::type::Parameter       16      -
+group0_block0_bn1_moving_variance[16]: clnet::type::Parameter   16      -
+group1_block0_bn0_beta[16]: clnet::type::Bias   16
+group1_block0_bn0_gamma[16]: clnet::type::Weight        16
+group1_block0_bn0_moving_mean[16]: clnet::type::Parameter       16      -
+group1_block0_bn0_moving_variance[16]: clnet::type::Parameter   16      -
+inference_bias[10]: clnet::type::Bias   10
+[0,@2019-05-06 23:02:55] GeForce GTX 1080 Ti (kernels build: 1s.84ms)
+[debugger] interactive thread started on device 0.
+[0,0,58902ms] train loss: 1.16239       test set accuracy: 57.65%
+[0,1,777.589600/s] train loss: 0.818452 test set accuracy: 65.6%
+[0,2,772.429138/s] train loss: 0.941452 test set accuracy: 65.57%
+[0,3,772.381409/s] train loss: 0.914646 test set accuracy: 70.4%
+[0,4,772.333740/s] train loss: 0.890248 test set accuracy: 71.93%
+[0,5,772.286072/s] train loss: 0.868742 test set accuracy: 72.64%
+[0,6,772.119263/s] train loss: 0.784145 test set accuracy: 73.25%
+[0,7,771.952576/s] train loss: 0.50787  test set accuracy: 74.12%
+[0,8,771.964478/s] train loss: 0.679059 test set accuracy: 75%
+[0,9,771.964478/s] train loss: 0.619829 test set accuracy: 74.54%
+[0,10,772.000183/s] train loss: 0.596677        test set accuracy: 76.02%
+[0,11,772.000183/s] train loss: 0.847572        test set accuracy: 75.81%
+[0,12,771.904907/s] train loss: 0.802736        test set accuracy: 75.48%
+[0,13,772.000183/s] train loss: 0.7105  test set accuracy: 77.84%
+[0,14,771.857300/s] train loss: 0.682924        test set accuracy: 77%
+[0,15,771.833496/s] train loss: 0.487696        test set accuracy: 76.49%
+[0,16,771.893005/s] train loss: 0.54608 test set accuracy: 77.13%
+[0,17,771.797791/s] train loss: 0.651461        test set accuracy: 76.69%
+[0,18,771.773987/s] train loss: 0.709687        test set accuracy: 76.91%
+[0,19,771.940674/s] train loss: 0.57213 test set accuracy: 77.01%
+[0,20,731.054626/s] train loss: 0.383843        test set accuracy: 78.44%
+[0,21,771.643127/s] train loss: 0.45581 test set accuracy: 78.72%
+[0,22,771.583618/s] train loss: 0.498909        test set accuracy: 77.12%
+[0,23,763.951660/s] train loss: 0.493421        test set accuracy: 77.9%
+[0,24,763.765137/s] train loss: 0.554525        test set accuracy: 77.41%
+[0,25,763.776733/s] train loss: 0.500107        test set accuracy: 77.98%
+[0,26,759.822693/s] train loss: 0.635151        test set accuracy: 78.26%
+[0,27,759.476746/s] train loss: 0.598002        test set accuracy: 78.51%
+[0,28,759.407593/s] train loss: 0.559696        test set accuracy: 76.91%
+[0,29,759.361511/s] train loss: 0.80741 test set accuracy: 78.15%
+[0,30,758.970032/s] train loss: 0.607492        test set accuracy: 78.55%
+</pre>
