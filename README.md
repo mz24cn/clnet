@@ -553,9 +553,7 @@ clnet::type::IterativeOptimizer         IterativeOptimizer[4]
 [0,27,1964.572266/s] train accuracy: 0.998763   test set accuracy: 99.15%
 </pre>
 
-支持残差网络Wide residual networks (
-http://arxiv.org/abs/1605.07146
-)。命令行中“/dso”生成仅包含运算Tensor的执行树，“/pp”打印参数清单（按大小倒序）：
+支持宽残差网络Wide residual networks ([http://arxiv.org/abs/1605.07146](http://arxiv.org/abs/1605.07146))。命令行中“/dso”生成仅包含运算Tensor的执行树，“/pp”打印参数清单（按大小倒序）：
 ```
 ./build/OpenCLNet CIFAR_WRN :cifar_folder /cifar-10-batches-bin/ :width 1 :N 1 :batch_size 64 /dso /pp /1
 ```  

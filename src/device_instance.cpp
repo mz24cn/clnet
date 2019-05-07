@@ -605,7 +605,7 @@ void OpenCL_::print_tensor_memory()
 		if (tensor->volume == 0)
 			continue;
 		describe_tensor(tensor);
-		logger << " \t" << formatWithComma(tensor->volume * sizeof(float)) << " bytes" << endl;
+		logger << " \t" << formatWithComma(tensor->volume * sizeof(float)) << " bytes (" << (10000 * tensor->volume / total / 100.0f) << "%)" << endl;
 	}
 }
 

@@ -139,7 +139,7 @@ T residualBlock(T& data, int k, int filters, int block, const string& name)
 //	T dropout = DropOut(conv0, 0.3, "dropout");
 	T activation1 = ReLU(BatchNormalizedLayer(conv0/*dropout*/, 0.00001f, 0.1f, suffix + "_bn1"));
 	T conv1 = ConvolutionLayer(activation1, filters * k, kernel_size, 1, "", true, false, suffix + "_conv1");
-	T short_connection = block == 0? ConvolutionLayer(activation0, filters * k, 1, stride, "", true, false, suffix + "_convdim") : data;
+	T short_connection = block == 0 || k > 1? ConvolutionLayer(activation0, filters * k, 1, stride, "", true, false, suffix + "_convdim") : data;
 //	conv1 += short_connection;
 //	return conv1;
 	T addition = conv1 + short_connection;
