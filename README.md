@@ -34,10 +34,12 @@ charRNN推断：
 .\Release\OpenCLNet.exe charRNN /p :index_file D:\DataSets\charRNN\obama.index :params_file D:\DataSets\charRNN\epoch520_91%.clnetparams :sample "Now it's time"
 ``` 
 obama.txt可从[http://data.mxnet.io/mxnet/data/char_lstm.zip](http://data.mxnet.io/mxnet/data/char_lstm.zip)下载。  
-MNIST CNN：  
+MNIST CNN（训练及预测命令行。预测图片需使用28*28大小的24位BMP格式，黑底白字）：  
 ```
 .\Release\OpenCLNet.exe MNIST_CNN /ds :mnist_folder D:\DataSets\MNIST\
-```  
+
+.\Release\OpenCLNet.exe MNIST_CNN /p /1 :params_file D:\DataSets\MNIST_CNN.clnetparams :file F:\9.bmp
+```    
 D:/DataSets/下需包含MNIST数据集文件train-images.idx3-ubyte，train-labels.idx1-ubyte，t10k-images.idx3-ubyte，t10k-labels.idx1-ubyte。可从[http://yann.lecun.com/exdb/mnist/](http://yann.lecun.com/exdb/mnist/)下载。目录名末尾请加上路径分隔符。
 
 如何调试：  
