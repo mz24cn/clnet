@@ -105,13 +105,20 @@ kernel void load_mnist_images(global float* data, global float* label, const glo
 
 T MNIST_CNN(bool is_predict)
 {
-	const string mnist_folder = optional<string>("mnist_folder", "D:\\DataSets\\");
-	const int batch_size = optional<int>("batch_size", 32);
-	auto iterator = new MNISTImageIterator(mnist_folder, batch_size);
-
-	vector<int64> dims{batch_size, iterator->peers[0]->dimensions[1], iterator->peers[0]->dimensions[2], 1};
-	auto tensor = new Tensor(dims, {}, "train_images_data");
-	tensor->dependent_on(iterator);
+	int batch_size;
+	Tensor *tensor, *iterator = nullptr;
+	if (is_predict) {
+		batch_size = 1;
+		tensor = &Data({1, 28, 28, 1}, nullptr, "inference_image_data"); //data will be automatically downloaded to device on every running
+	}
+	else {
+		batch_size = optional<int>("batch_size", 32);
+		const string mnist_folder = optional<string>("mnist_folder", "D:\\DataSets\\");
+		iterator = new MNISTImageIterator(mnist_folder, batch_size);
+		vector<int64> dims{batch_size, iterator->peers[0]->dimensions[1], iterator->peers[0]->dimensions[2], 1};
+		tensor = new Tensor(dims, {}, "train_images_data");
+		tensor->dependent_on(iterator);
+	}
 
 	//when filters3 > 480, AMD R9 295X2 (Hawaii) device runs unstably, randomly cause program to hung
 	const int kernel_size = 5, stride = 1, filters1 = 20, filters2 = 50, filters3 = 480, class_num = 10;
@@ -148,8 +155,44 @@ T MNIST_CNN(bool is_predict)
 
 	T feature = FullyConnectedLayer(reshape, filters3, activation, "feature");
 	T inference = FullyConnectedLayer(feature, class_num, "", "inference");
-	if (is_predict)
-		return inference;
+
+	auto params_file = optional<string>("params_file", "D:\\DataSets\\MNIST_CNN.clnetparams");
+	if (is_predict) {
+		auto initializer = new InstantTensor("parameters_initializer", {}, {}, [params_file](InstantTensor* self, DeviceInstance& I) {
+			ifstream ifs(params_file, istream::binary);
+			if (!ifs)
+				throw runtime_error("failed to open " + params_file);
+			auto tensors = load_tensors(ifs, &I);
+			ifs.close();
+			logger << to_string(tensors.size()) << " parameters successfully loaded." << endl;
+		});
+		T output = Softmax(inference);
+		auto predictor = new InstantTensor("charRNN_predictor", {initializer}, [&output](InstantTensor* self, DeviceInstance& I) {
+			int N = output.volume;
+			set<Tensor*> visited;
+			output.launch(&visited, &I);
+			wait_for_all_kernels_finished(I);
+
+			output.upload(I);
+			float* probability = I.pointers[&output];
+			auto n = max_element(probability, probability + N) - probability;
+			logger << "Image number: " << n << " probability: " << int(probability[n] * 100) << "%" << endl;
+		}, {&inference}, [](InstantTensor* self) -> Tensor*{ return self->peers[0]; });
+
+		const string file = optional<string>("file", "D:\\DataSets\\28x28.bmp");
+		int width, height;
+		unsigned char* buffer = read_24bits_bmp(file.c_str(), &width, &height);
+		if (height != tensor->dimensions[1] || width != tensor->dimensions[2])
+			throw runtime_error("wrong image size: " + file);
+		tensor->initialize(nullptr);
+		auto* p = tensor->pointer;
+		for (int r = height - 1; r >= 0; r--)
+			for (int c = 0; c < width; c++) {
+				int offset = (r * width + c) * 3;
+				*p++ = 0.3f * buffer[offset] + 0.59f * buffer[offset + 1] + 0.11f * buffer[offset + 2]; //generate grayscale image Tensor data
+			}
+		return *predictor;
+	}
 
 	const float learning_rate = optional<float>("learning_rate", 0.0064), weight_decay = optional<float>("weight_decay", 0);
 	const int max_epochs = optional<int>("max_epochs", 5000);
@@ -163,10 +206,9 @@ T MNIST_CNN(bool is_predict)
 	for (auto tensor : Tensor::ALL)
 		if (dynamic_cast<type::Parameter*>(tensor) != nullptr)
 			parameters.push_back(tensor);
-	auto clnetparams_file = optional<string>("params_file", "D:\\DataSets\\MNIST_CNN.clnetparams");
 
 	const int N_samples = iterator->peers[0]->dimensions[0];
-	auto monitor = new InstantTensor("MNIST_CNN_monitor", {}, {}, [batch_size, N_samples, &loss, parameters, clnetparams_file](InstantTensor* self, DeviceInstance& I) {
+	auto monitor = new InstantTensor("MNIST_CNN_monitor", {}, {}, [batch_size, N_samples, &loss, parameters, params_file](InstantTensor* self, DeviceInstance& I) {
 		auto optimizer = static_cast<type::IterativeOptimizer*>(self->peers[0]);
 		auto epoch = optimizer->current_epoch(I);
 
@@ -174,7 +216,7 @@ T MNIST_CNN(bool is_predict)
 		string speed = epoch == 0? to_string(duration) + "ms" : to_string(1000.0f * N_samples / duration) + "/s";
 		logger << "[" << I.ID << "," << epoch << "," << speed << "] train loss: " << static_cast<back::Loss*>(&loss)->L(I);
 
-		ofstream ofs(clnetparams_file, ostream::binary);
+		ofstream ofs(params_file, ostream::binary);
 		for (size_t i = 0; i < parameters.size(); i++)
 			save_tensor(parameters[i], ofs, &I);
 		ofs.close();

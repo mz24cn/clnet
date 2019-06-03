@@ -90,6 +90,7 @@ Tensor* read_mnist_labels(string file, string name, int alignment_size)
 typedef long LONG;
 typedef unsigned long DWORD;
 typedef unsigned short WORD;
+typedef unsigned char BYTE;
 
 // 位图文件头文件定义
 #pragma pack(push, 2)
@@ -116,7 +117,7 @@ typedef struct{
 	DWORD      biClrImportant; //本位图中重要的色彩数
 } BMPINFOHEADER; //位图信息头定义
 
-void generate_24bits_bmp(unsigned char* pData, int width, int height, const char* file) //生成Bmp图片，传递RGB值，传递图片像素大小，传递图片存储路径
+bool generate_24bits_bmp(unsigned char* pData, int width, int height, const char* file) //生成Bmp图片，传递RGB值，传递图片像素大小，传递图片存储路径
 {
 	int size = width * height * 3; //像素数据大小
 	// 位图第一部分，文件信息
@@ -143,11 +144,38 @@ void generate_24bits_bmp(unsigned char* pData, int width, int height, const char
 
 	FILE* fp = fopen(file,"wb");
 	if (!fp)
-		return;
+		return false;
 	fwrite(&bfh, sizeof(BMPFILEHEADER), 1, fp);
 	fwrite(&bih, sizeof(BMPINFOHEADER), 1, fp);
 	fwrite(pData, 1, size, fp);
 	fclose(fp);
+	return true;
+}
+
+unsigned char* read_24bits_bmp(const char *file, int* width, int* height)
+{
+	//二进制读方式打开指定的图像文件
+	FILE* fp = fopen(file, "rb");
+	if (!fp)
+		return nullptr;
+
+	//跳过位图文件头结构BMPFILEHEADER
+	fseek(fp, sizeof(BMPFILEHEADER), 0);
+	//定义位图信息头结构变量，读取位图信息头进内存，存放在变量head中
+	BMPINFOHEADER head;
+	fread(&head, sizeof(BMPINFOHEADER), 1, fp);
+	if (head.biBitCount != 24) //仅支持24位BMP
+		return nullptr;
+	//获取图像宽、高、每像素所占位数等信息
+	*width = head.biWidth;
+	*height = head.biHeight;
+	//申请位图数据所需要的空间，读位图数据进内存
+	int size = *width * *height * 3;
+	unsigned char* buffer = new unsigned char[size];
+	fread(buffer, 1, size, fp);
+	//关闭文件
+	fclose(fp);
+	return buffer;
 }
 
 void read_cifar10_images_and_labels(string file, int alignment_size, int offset, int num_of_images, Tensor* images, Tensor* labels)

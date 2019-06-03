@@ -10,7 +10,8 @@
 
 #include <tensor.hpp>
 
-void generate_24bits_bmp(unsigned char* pData, int width, int height, const char* file);
+bool generate_24bits_bmp(unsigned char* pData, int width, int height, const char* file);
+unsigned char* read_24bits_bmp(const char *file, int* width, int* height);
 
 clnet::Tensor* read_mnist_images(std::string file, std::string name, int alignment_size = 1);
 clnet::Tensor* read_mnist_labels(std::string file, std::string name, int alignment_size = 1);
