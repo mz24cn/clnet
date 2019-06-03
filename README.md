@@ -37,8 +37,7 @@ obama.txt可从[http://data.mxnet.io/mxnet/data/char_lstm.zip](http://data.mxnet
 MNIST CNN（训练及预测命令行。预测图片需使用28*28大小的24位BMP格式，黑底白字）：  
 ```
 .\Release\OpenCLNet.exe MNIST_CNN /ds :mnist_folder D:\DataSets\MNIST\
-
-.\Release\OpenCLNet.exe MNIST_CNN /p /1 :params_file D:\DataSets\MNIST_CNN.clnetparams :file F:\9.bmp
+.\Release\OpenCLNet.exe MNIST_CNN /p :params_file D:\DataSets\MNIST_CNN.clnetparams :file D:\9.bmp
 ```    
 D:/DataSets/下需包含MNIST数据集文件train-images.idx3-ubyte，train-labels.idx1-ubyte，t10k-images.idx3-ubyte，t10k-labels.idx1-ubyte。可从[http://yann.lecun.com/exdb/mnist/](http://yann.lecun.com/exdb/mnist/)下载。目录名末尾请加上路径分隔符。
 
